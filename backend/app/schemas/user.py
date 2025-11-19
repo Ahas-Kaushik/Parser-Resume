@@ -25,13 +25,16 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """User creation schema"""
-    password: str = Field(..., min_length=6, max_length=100)
+    password: str = Field(..., min_length=6, max_length=50)  # MAX 50 chars
     password_confirm: str
     
-    @validator('password_confirm')
-    def passwords_match(cls, v, values):
-        if 'password' in values and v != values['password']:
-            raise ValueError('Passwords do not match')
+    @validator('password')
+    def password_strength(cls, v):
+        """Validate password strength"""
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if len(v) > 50:
+            raise ValueError('Password must be less than 50 characters')
         return v
 
 

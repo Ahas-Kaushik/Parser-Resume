@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react';
 import { GlassLayout } from '../components/layout/GlassLayout';
@@ -10,7 +10,7 @@ import { useToast } from '../hooks/useToast';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuthStore();
+  const { login, isAuthenticated, user } = useAuthStore();
   const toast = useToast();
 
   const [formData, setFormData] = useState({
@@ -20,22 +20,78 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      console.log('🔄 Already authenticated, redirecting...', user.role);
+      if (user.role === 'employer') {
+        navigate('/employer/dashboard', { replace: true });
+      } else {
+        navigate('/candidate/dashboard', { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
+      console.log('🔐 Starting login process...');
+      
+      // Call login and WAIT for it to complete
       await login(formData);
+      
+      console.log('✅ Login completed, checking state...');
+      
+      // Wait a moment for state to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Get the updated state
+      const state = useAuthStore.getState();
+      console.log('📊 Current state:', {
+        isAuthenticated: state.isAuthenticated,
+        user: state.user,
+        tokenExists: !!state.token,
+      });
+      
+      // Check localStorage directly
+      const tokenInStorage = localStorage.getItem('token');
+      const userInStorage = localStorage.getItem('user');
+      
+      console.log('💾 LocalStorage check:', {
+        token: !!tokenInStorage,
+        user: !!userInStorage,
+      });
+      
+      if (!tokenInStorage || !userInStorage) {
+        throw new Error('Token not saved to localStorage');
+      }
+      
       toast.success('Login successful!');
       
-      // Redirect based on role will happen in App.tsx via /dashboard route
-      navigate('/dashboard');
+      // Parse user to get role
+      const userData = JSON.parse(userInStorage);
+      console.log('👤 User role:', userData.role);
+      
+      // Force a small delay before redirect
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Redirect based on role
+      if (userData.role === 'employer') {
+        console.log('🔄 Redirecting to employer dashboard');
+        navigate('/employer/dashboard', { replace: true });
+      } else {
+        console.log('🔄 Redirecting to candidate dashboard');
+        navigate('/candidate/dashboard', { replace: true });
+      }
+      
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Login failed. Please check your credentials.';
+      console.error('❌ Login error:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'Login failed. Please check your credentials.';
       setError(errorMsg);
       toast.error(errorMsg);
-    } finally {
       setLoading(false);
     }
   };
@@ -83,6 +139,7 @@ export default function LoginPage() {
               placeholder="you@example.com"
               icon={<Mail className="w-5 h-5" />}
               required
+              disabled={loading}
             />
 
             <Input
@@ -94,6 +151,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               icon={<Lock className="w-5 h-5" />}
               required
+              disabled={loading}
             />
 
             <GlassButton
@@ -102,8 +160,9 @@ export default function LoginPage() {
               fullWidth
               showArrow
               loading={loading}
+              disabled={loading}
             >
-              Sign In
+              {loading ? 'Signing In...' : 'Sign In'}
             </GlassButton>
           </form>
 
