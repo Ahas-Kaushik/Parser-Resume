@@ -1,0 +1,59 @@
+
+---
+
+## 📝 File: `docker-compose.yml`
+
+```yaml
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: jobportal-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - DATABASE_URL=sqlite:///./app.db
+      - UPLOAD_DIR=/app/storage
+      - MAX_FILE_SIZE=10485760
+      - EMAIL_ENABLED=false
+      - DEBUG=true
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+    volumes:
+      - ./backend:/app
+      - backend-storage:/app/storage
+      - backend-uploads:/app/uploads
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - jobportal-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: jobportal-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+      - VITE_APP_NAME=AI-Powered Job Portal
+      - VITE_MAX_FILE_SIZE=10485760
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+    depends_on:
+      - backend
+    networks:
+      - jobportal-network
+    restart: unless-stopped
+
+volumes:
+  backend-storage:
+    driver: local
+  backend-uploads:
+    driver: local
+
+networks:
+  jobportal-network:
+    driver: bridge

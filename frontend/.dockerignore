@@ -1,11 +1,37 @@
+# Node
 node_modules
 npm-debug.log
-.env
-.env.local
+yarn-debug.log
+yarn-error.log
+
+# Build
 dist
 build
+.cache
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
 .vscode
 .idea
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Testing
 coverage
 .nyc_output
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+docs/
