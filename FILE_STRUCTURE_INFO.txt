@@ -1,0 +1,36 @@
+========================================
+AI Job Portal - File Structure Reference
+========================================
+
+Created on: 19-11-2025  0:47:49.56
+
+Total Files: 71
+- Backend: 22 files
+- Frontend: 46 files
+- Root: 3 files
+
+IMPORTANT FILES:
+- .gitignore (ROOT) - Prevents committing sensitive files
+- backend/.env - Your local environment variables (NOT in git)
+- backend/.env.example - Template for environment variables (IN git)
+- frontend/.env - Your local frontend config (NOT in git)
+- frontend/.env.example - Template for frontend config (IN git)
+
+IGNORED BY GIT (won't be pushed):
+- .venv/ and venv/ folders
+- .env files (except .env.example)
+- node_modules/
+- __pycache__/
+- *.db files
+- storage/ and uploads/ folders
+- dist/ and build/ folders
+
+INCLUDED IN GIT (will be pushed):
+- All .py and .tsx/.ts source files
+- .env.example files
+- requirements.txt
+- package.json
+- All configuration files
+- README.md
+
+========================================
