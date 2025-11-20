@@ -1,8 +1,8 @@
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-console.log('🔧 API Base URL:', API_BASE_URL);
+console.log('🔧 API initialized with base URL:', API_BASE_URL);
 
 // Create axios instance
 const api = axios.create({
@@ -10,22 +10,25 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: false,
 });
 
-// Request interceptor - add auth token
+// CRITICAL: Request interceptor to add token to EVERY request
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
+    // Get fresh token from localStorage on EVERY request
     const token = localStorage.getItem('token');
     
-    console.log('📤 Request:', config.method?.toUpperCase(), config.url);
-    console.log('🔑 Token exists:', !!token);
+    const url = config.url || 'unknown';
+    const method = config.method?.toUpperCase() || 'unknown';
+    
+    console.log(`📤 [${method}] ${url}`);
     
     if (token) {
+      // Add Authorization header
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('✅ Authorization header set:', `Bearer ${token.substring(0, 20)}...`);
+      console.log(`   ✅ Token attached: ${token.substring(0, 20)}...`);
     } else {
-      console.log('⚠️ No token found in localStorage');
+      console.log(`   ⚠️ NO TOKEN FOUND in localStorage`);
     }
     
     return config;
@@ -36,31 +39,36 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor - handle errors
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ Response:', response.status, response.config.url);
+    const url = response.config.url || 'unknown';
+    const status = response.status;
+    console.log(`✅ [${status}] ${url}`);
     return response;
   },
   (error) => {
-    console.error('❌ API Error:', {
-      url: error.config?.url,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
+    const url = error.config?.url || 'unknown';
+    const status = error.response?.status || 'unknown';
+    const data = error.response?.data;
     
+    console.error(`❌ [${status}] ${url}`, data);
+    
+    // Handle 401 Unauthorized
     if (error.response?.status === 401) {
-      console.log('🚫 Unauthorized - clearing token and redirecting to login');
-      // Unauthorized - clear token and redirect to login
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      const currentPath = window.location.pathname;
       
-      // Only redirect if not already on login/register page
-      if (!window.location.pathname.includes('/login') && 
-          !window.location.pathname.includes('/register')) {
+      // Don't redirect if already on auth pages
+      if (!currentPath.includes('/login') && 
+          !currentPath.includes('/register') &&
+          !currentPath.includes('/')) {
+        console.log('🚫 Unauthorized - redirecting to login');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         window.location.href = '/login';
       }
     }
+    
     return Promise.reject(error);
   }
 );

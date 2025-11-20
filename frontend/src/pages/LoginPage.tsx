@@ -23,12 +23,11 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log('🔄 Already authenticated, redirecting...', user.role);
-      if (user.role === 'employer') {
-        navigate('/employer/dashboard', { replace: true });
-      } else {
-        navigate('/candidate/dashboard', { replace: true });
-      }
+      console.log('↪️ Already authenticated, redirecting...');
+      const targetRoute = user.role === 'employer' 
+        ? '/employer/dashboard' 
+        : '/candidate/dashboard';
+      navigate(targetRoute, { replace: true });
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -38,60 +37,44 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      console.log('🔐 Starting login process...');
+      console.log('🚀 Submitting login form...');
       
-      // Call login and WAIT for it to complete
+      // Call login
       await login(formData);
       
-      console.log('✅ Login completed, checking state...');
+      console.log('✅ Login function completed');
       
-      // Wait a moment for state to update
+      // Wait a tiny bit for state to propagate
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Get the updated state
-      const state = useAuthStore.getState();
-      console.log('📊 Current state:', {
-        isAuthenticated: state.isAuthenticated,
-        user: state.user,
-        tokenExists: !!state.token,
+      // Get current state
+      const currentState = useAuthStore.getState();
+      const currentUser = currentState.user;
+      
+      console.log('📊 Current state after login:', {
+        isAuth: currentState.isAuthenticated,
+        hasUser: !!currentUser,
+        role: currentUser?.role,
       });
-      
-      // Check localStorage directly
-      const tokenInStorage = localStorage.getItem('token');
-      const userInStorage = localStorage.getItem('user');
-      
-      console.log('💾 LocalStorage check:', {
-        token: !!tokenInStorage,
-        user: !!userInStorage,
-      });
-      
-      if (!tokenInStorage || !userInStorage) {
-        throw new Error('Token not saved to localStorage');
-      }
       
       toast.success('Login successful!');
       
-      // Parse user to get role
-      const userData = JSON.parse(userInStorage);
-      console.log('👤 User role:', userData.role);
+      // Determine target route
+      const targetRoute = currentUser?.role === 'employer'
+        ? '/employer/dashboard'
+        : '/candidate/dashboard';
       
-      // Force a small delay before redirect
-      await new Promise(resolve => setTimeout(resolve, 200));
+      console.log('🔄 Navigating to:', targetRoute);
       
-      // Redirect based on role
-      if (userData.role === 'employer') {
-        console.log('🔄 Redirecting to employer dashboard');
-        navigate('/employer/dashboard', { replace: true });
-      } else {
-        console.log('🔄 Redirecting to candidate dashboard');
-        navigate('/candidate/dashboard', { replace: true });
-      }
+      // Navigate with replace to prevent back button issues
+      navigate(targetRoute, { replace: true });
       
     } catch (err: any) {
       console.error('❌ Login error:', err);
-      const errorMsg = err.response?.data?.detail || err.message || 'Login failed. Please check your credentials.';
+      const errorMsg = err.response?.data?.detail || 'Invalid email or password';
       setError(errorMsg);
       toast.error(errorMsg);
+    } finally {
       setLoading(false);
     }
   };

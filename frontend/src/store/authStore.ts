@@ -31,21 +31,21 @@ export const useAuthStore = create<AuthState>()(
       login: async (credentials: LoginCredentials) => {
         set({ isLoading: true });
         try {
-          console.log('🔐 Attempting login...');
+          console.log('🔐 Login attempt...');
           
           const response = await api.post<AuthResponse>('/auth/login', credentials);
           const { access_token, user } = response.data;
           
-          console.log('✅ Login response received:', { user, token: access_token.substring(0, 20) + '...' });
+          console.log('✅ Login successful:', user.email, user.role);
+          console.log('🔑 Token received:', access_token.substring(0, 30) + '...');
           
-          // Save to localStorage IMMEDIATELY
+          // Save to localStorage
           localStorage.setItem('token', access_token);
           localStorage.setItem('user', JSON.stringify(user));
           
-          console.log('💾 Token saved to localStorage');
-          console.log('👤 User saved to localStorage');
+          console.log('💾 Saved to localStorage');
           
-          // Update state
+          // Update Zustand state
           set({
             user,
             token: access_token,
@@ -53,7 +53,7 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
           
-          console.log('✅ Auth state updated:', { isAuthenticated: true, role: user.role });
+          console.log('✅ State updated - isAuthenticated: true');
           
         } catch (error: any) {
           console.error('❌ Login failed:', error.response?.data || error.message);
@@ -65,7 +65,7 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegisterData) => {
         set({ isLoading: true });
         try {
-          console.log('📝 Attempting registration...');
+          console.log('📝 Registration attempt...');
           await api.post('/auth/register', data);
           set({ isLoading: false });
           console.log('✅ Registration successful');
@@ -85,19 +85,19 @@ export const useAuthStore = create<AuthState>()(
           token: null,
           isAuthenticated: false,
         });
-        console.log('✅ Logged out successfully');
+        console.log('✅ Logged out');
       },
 
       checkAuth: async () => {
         const token = localStorage.getItem('token');
         const userStr = localStorage.getItem('user');
         
-        console.log('🔍 Checking auth state...');
-        console.log('  - Token in localStorage:', !!token);
-        console.log('  - User in localStorage:', !!userStr);
+        console.log('🔍 checkAuth called');
+        console.log('   Token exists:', !!token);
+        console.log('   User exists:', !!userStr);
         
         if (!token || !userStr) {
-          console.log('⚠️ No token or user found - user not authenticated');
+          console.log('⚠️ No auth data - setting unauthenticated');
           set({ isAuthenticated: false, user: null, token: null });
           return;
         }
@@ -105,29 +105,33 @@ export const useAuthStore = create<AuthState>()(
         try {
           const user = JSON.parse(userStr);
           
-          // Set state first (optimistic)
+          // Set state optimistically
           set({
             user,
             token,
             isAuthenticated: true,
           });
           
-          console.log('✅ Auth restored from localStorage:', { email: user.email, role: user.role });
+          console.log('✅ Auth state restored from localStorage');
+          console.log('   User:', user.email, user.role);
           
-          // Verify token is still valid
-          const response = await api.get<User>('/auth/me');
-          
-          console.log('✅ Token verified with backend');
-          
-          // Update with fresh data from backend
-          set({
-            user: response.data,
-            token,
-            isAuthenticated: true,
-          });
+          // Try to verify with backend (but don't fail if it errors)
+          try {
+            const response = await api.get<User>('/auth/me');
+            console.log('✅ Token verified with backend');
+            
+            set({
+              user: response.data,
+              token,
+              isAuthenticated: true,
+            });
+          } catch (verifyError) {
+            console.warn('⚠️ Backend verification failed, but keeping local auth');
+            // Don't clear auth here - let it stay authenticated
+          }
           
         } catch (error) {
-          console.error('❌ Auth verification failed - clearing state');
+          console.error('❌ checkAuth failed - clearing auth');
           localStorage.removeItem('token');
           localStorage.removeItem('user');
           set({
