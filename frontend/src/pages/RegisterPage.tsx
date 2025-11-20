@@ -23,6 +23,7 @@ export default function RegisterPage() {
     password_confirm: '',
     role: 'candidate' as UserRole,
   });
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -72,12 +73,9 @@ export default function RegisterPage() {
             <div className="inline-flex items-center justify-center p-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl mb-4 shadow-xl">
               <UserPlus className="w-12 h-12 text-white" />
             </div>
-            <h1 className="text-4xl font-extrabold text-white mb-2">
-              Create Account
-            </h1>
-            <p className="text-white/80 text-lg">
-              Join our AI-powered recruitment platform
-            </p>
+
+            <h1 className="text-4xl font-extrabold text-white mb-2">Create Account</h1>
+            <p className="text-white/80 text-lg">Join our AI-powered recruitment platform</p>
           </div>
 
           {/* Error Alert */}
@@ -90,34 +88,114 @@ export default function RegisterPage() {
           {/* Registration Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Role Selection */}
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, role: 'candidate' })}
-                className={`p-6 rounded-2xl border-2 transition-all ${
-                  formData.role === 'candidate'
-                    ? 'border-indigo-400 bg-indigo-500/20'
-                    : 'border-white/30 bg-white/5 hover:border-white/50'
-                }`}
-              >
-                <Users className="w-8 h-8 text-white mx-auto mb-2" />
-                <p className="text-white font-semibold">I'm a Candidate</p>
-                <p className="text-white/60 text-xs mt-1">Looking for jobs</p>
-              </button>
+            <div>
+              <label className="block text-white font-semibold mb-3 text-sm">
+                Select Your Role
+              </label>
 
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, role: 'employer' })}
-                className={`p-6 rounded-2xl border-2 transition-all ${
-                  formData.role === 'employer'
-                    ? 'border-purple-400 bg-purple-500/20'
-                    : 'border-white/30 bg-white/5 hover:border-white/50'
-                }`}
-              >
-                <Briefcase className="w-8 h-8 text-white mx-auto mb-2" />
-                <p className="text-white font-semibold">I'm an Employer</p>
-                <p className="text-white/60 text-xs mt-1">Hiring talent</p>
-              </button>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Candidate */}
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, role: 'candidate' })}
+                  className={`relative p-6 rounded-2xl border-2 transition-all duration-200 ${
+                    formData.role === 'candidate'
+                      ? 'border-indigo-400 bg-indigo-500/30 shadow-lg shadow-indigo-500/50'
+                      : 'border-white/30 bg-white/5 hover:border-white/50 hover:bg-white/10'
+                  }`}
+                >
+                  {formData.role === 'candidate' && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={3}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </div>
+                  )}
+
+                  <Users
+                    className={`w-10 h-10 mx-auto mb-3 transition-colors ${
+                      formData.role === 'candidate' ? 'text-indigo-300' : 'text-white'
+                    }`}
+                  />
+
+                  <p
+                    className={`font-bold text-lg mb-1 transition-colors ${
+                      formData.role === 'candidate' ? 'text-white' : 'text-white/80'
+                    }`}
+                  >
+                    I'm a Candidate
+                  </p>
+
+                  <p
+                    className={`text-xs transition-colors ${
+                      formData.role === 'candidate' ? 'text-indigo-200' : 'text-white/60'
+                    }`}
+                  >
+                    Looking for jobs
+                  </p>
+                </button>
+
+                {/* Employer */}
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, role: 'employer' })}
+                  className={`relative p-6 rounded-2xl border-2 transition-all duration-200 ${
+                    formData.role === 'employer'
+                      ? 'border-purple-400 bg-purple-500/30 shadow-lg shadow-purple-500/50'
+                      : 'border-white/30 bg-white/5 hover:border-white/50 hover:bg-white/10'
+                  }`}
+                >
+                  {formData.role === 'employer' && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={3}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </div>
+                  )}
+
+                  <Briefcase
+                    className={`w-10 h-10 mx-auto mb-3 transition-colors ${
+                      formData.role === 'employer' ? 'text-purple-300' : 'text-white'
+                    }`}
+                  />
+
+                  <p
+                    className={`font-bold text-lg mb-1 transition-colors ${
+                      formData.role === 'employer' ? 'text-white' : 'text-white/80'
+                    }`}
+                  >
+                    I'm an Employer
+                  </p>
+
+                  <p
+                    className={`text-xs transition-colors ${
+                      formData.role === 'employer' ? 'text-purple-200' : 'text-white/60'
+                    }`}
+                  >
+                    Hiring talent
+                  </p>
+                </button>
+              </div>
             </div>
 
             <Input
@@ -176,13 +254,7 @@ export default function RegisterPage() {
               />
             </div>
 
-            <GlassButton
-              type="submit"
-              variant="indigo"
-              fullWidth
-              showArrow
-              loading={loading}
-            >
+            <GlassButton type="submit" variant="indigo" fullWidth showArrow loading={loading}>
               Create Account
             </GlassButton>
           </form>
