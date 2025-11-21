@@ -57,16 +57,32 @@ def verify_token(token: str) -> dict:
     )
     
     try:
+        print(f"🔍 Verifying token: {token[:30]}...")
+        
         payload = jwt.decode(
             token,
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM]
         )
+        
+        print(f"✅ Token decoded successfully:")
+        print(f"   - User ID: {payload.get('sub')}")
+        print(f"   - Email: {payload.get('email')}")
+        print(f"   - Role: {payload.get('role')}")
+        print(f"   - Expires: {payload.get('exp')}")
+        
         user_id: int = payload.get("sub")
         if user_id is None:
+            print("❌ Token missing 'sub' (user_id)")
             raise credentials_exception
+            
         return payload
-    except JWTError:
+        
+    except jwt.ExpiredSignatureError:
+        print("❌ Token has expired")
+        raise credentials_exception
+    except JWTError as e:
+        print(f"❌ JWT Error: {e}")
         raise credentials_exception
 
 
@@ -87,16 +103,30 @@ async def get_current_user(
     Raises:
         HTTPException: If user not found or token invalid
     """
+    print(f"\n{'='*60}")
+    print(f"🔐 get_current_user called")
+    print(f"{'='*60}")
+    
     payload = verify_token(token)
     user_id: int = payload.get("sub")
     
+    print(f"🔍 Looking up user with ID: {user_id}")
+    
     user = db.query(User).filter(User.id == user_id).first()
+    
     if user is None:
+        print(f"❌ User with ID {user_id} not found in database")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    print(f"✅ User found:")
+    print(f"   - ID: {user.id}")
+    print(f"   - Email: {user.email}")
+    print(f"   - Role: {user.role}")
+    print(f"{'='*60}\n")
     
     return user
 
