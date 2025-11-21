@@ -1,17 +1,25 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Briefcase, DollarSign, Calendar, Building2, Eye } from 'lucide-react';
+import { ArrowLeft, MapPin, Briefcase, DollarSign, Calendar, Building2, Eye, FileText, X } from 'lucide-react';
 import { GlassLayout } from '../components/layout/GlassLayout';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
 import Navbar from '../components/layout/Navbar';
-import { ApplicationModal } from '../components/application/ApplicationModal';
 import { ApplicationDetailsModal } from '../components/application/ApplicationDetailsModal';
 import { Spinner } from '../components/ui/Spinner';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../hooks/useToast';
 import api from '../lib/api';
 import type { Job, Application } from '../types';
+
+// Helper function to format date
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
 
 export default function JobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -414,71 +422,23 @@ export default function JobDetails() {
         </div>
       </div>
 
-      {/* Application Modal */}
-      <Modal isOpen={showApplicationModal} onClose={() => setShowApplicationModal(false)} title="Apply for Position" size="lg">
-        <form onSubmit={handleApply} className="space-y-6">
-          <Input
-            label="Full Name"
-            name="name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            required
-          />
-
-          <Input
-            label="Phone Number"
-            name="phone"
-            type="tel"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            required
-          />
-
-          <Input
-            label="Current Company (Optional)"
-            name="current_company"
-            value={formData.current_company}
-            onChange={(e) => setFormData({ ...formData, current_company: e.target.value })}
-          />
-
-          <Input
-            label="Current Position (Optional)"
-            name="current_position"
-            value={formData.current_position}
-            onChange={(e) => setFormData({ ...formData, current_position: e.target.value })}
-          />
-
-          <Input
-            label="Current Salary (Optional)"
-            name="current_salary"
-            type="number"
-            value={formData.current_salary}
-            onChange={(e) => setFormData({ ...formData, current_salary: e.target.value })}
-            placeholder="Annual salary in USD"
-          />
-
-          <div>
-            <label className="block text-white/90 font-medium mb-2 text-sm">Resume *</label>
-            <ResumeUpload onFileSelect={setResumeFile} />
-          </div>
-
-          <div className="p-4 bg-blue-500/20 border border-blue-500/50 rounded-xl">
-            <p className="text-sm text-blue-200">
-              <strong>Note:</strong> Your resume will be instantly analyzed by our AI. You'll receive feedback within seconds!
-            </p>
-          </div>
-
-          <div className="flex space-x-4">
-            <GlassButton type="submit" variant="indigo" fullWidth loading={isApplying} showArrow>
-              Submit Application
+      {/* Application Modal - Simple placeholder for now */}
+      {showApplicationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <GlassCard className="p-6 max-w-2xl w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-white">Apply for {job.title}</h2>
+              <button onClick={() => setShowApplicationModal(false)} className="text-white/70 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <p className="text-white/70">Application form temporarily disabled. Please contact support.</p>
+            <GlassButton onClick={() => setShowApplicationModal(false)} variant="secondary" className="mt-4">
+              Close
             </GlassButton>
-
-            <GlassButton type="button" variant="secondary" onClick={() => setShowApplicationModal(false)} disabled={isApplying}>
-              Cancel
-            </GlassButton>
-          </div>
-        </form>
-      </Modal>
+          </GlassCard>
+        </div>
+      )}
 
       {/* Application Details Modal */}
       {selectedApplication && (
