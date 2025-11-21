@@ -76,6 +76,61 @@ export interface JobRules {
   };
 }
 
+export interface ApplicationExplanation {
+  file?: string;
+  decision?: string;
+  score?: number;
+  rule_version?: string;
+  role?: string;
+  summary?: {
+    passed?: boolean;
+    reasons_pass?: string[];
+    reasons_fail?: string[];
+  };
+  skills?: {
+    candidate_skills?: string[];
+    matched_required_all?: string[];
+    missing_required_all?: string[];
+    matched_required_any?: string[];
+    missing_required_any?: string[];
+    target_skills?: string[];
+    similarity?: number;
+    similarity_threshold?: number;
+  };
+  experience?: {
+    estimated_years?: number;
+    min_required_years?: number;
+    meets_requirement?: boolean;
+  };
+  education?: {
+    degrees_found?: string[];
+    highest_degree?: string;
+    allowed_degrees?: string[];
+    min_degree_level?: string;
+    meets_requirement?: boolean;
+  };
+  location?: {
+    allowed_locations?: string[];
+    allow_remote?: boolean;
+    meets_requirement?: boolean;
+  };
+  work_authorization?: {
+    required?: boolean;
+    found?: boolean;
+    meets_requirement?: boolean;
+  };
+  forbidden_keywords?: {
+    found?: string[];
+    passed?: boolean;
+  };
+  scoring?: {
+    enabled?: boolean;
+    score?: number;
+    threshold?: number;
+    weights?: Record<string, number>;
+  };
+}
+
 export interface Application {
   id: number;
   job_id: number;
@@ -88,7 +143,7 @@ export interface Application {
   resume_path: string;
   status: ApplicationStatus;
   score?: number;
-  explanation?: any;
+  explanation?: ApplicationExplanation;
   created_at: string;
 }
 

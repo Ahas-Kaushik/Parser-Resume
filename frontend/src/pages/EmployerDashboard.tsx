@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, FileText, Users, TrendingUp, Plus, Eye } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Briefcase, TrendingUp, FileText, Users, Plus, Eye } from 'lucide-react';
 import { GlassLayout } from '../components/layout/GlassLayout';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
@@ -9,7 +9,6 @@ import { Spinner } from '../components/ui/Spinner';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../hooks/useToast';
 import api from '../lib/api';
-import { formatDate } from '../lib/utils';
 import type { Job } from '../types';
 
 export default function EmployerDashboard() {
@@ -19,6 +18,7 @@ export default function EmployerDashboard() {
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [applicationCounts, setApplicationCounts] = useState<Record<number, number>>({});
   const [stats, setStats] = useState({
     totalJobs: 0,
     activeJobs: 0,
@@ -42,17 +42,25 @@ export default function EmployerDashboard() {
       // Get application counts for each job
       let totalApplications = 0;
       let selectedCandidates = 0;
+      const counts: Record<number, number> = {};
 
       for (const job of response.data) {
         try {
-          const statsRes = await api.get(`/jobs/${job.id}/stats`);
-          totalApplications += statsRes.data.total_applications || 0;
-          selectedCandidates += statsRes.data.selected_count || 0;
+          const appsRes = await api.get(`/jobs/${job.id}/applications`);
+          const appCount = appsRes.data.length;
+          counts[job.id] = appCount;
+          totalApplications += appCount;
+
+          // Count selected candidates
+          const selected = appsRes.data.filter((app: any) => app.status === 'selected').length;
+          selectedCandidates += selected;
         } catch (error) {
-          console.error(`Failed to fetch stats for job ${job.id}`);
+          console.error(`Failed to fetch applications for job ${job.id}`);
+          counts[job.id] = 0;
         }
       }
 
+      setApplicationCounts(counts);
       setStats({ totalJobs, activeJobs, totalApplications, selectedCandidates });
     } catch (error: any) {
       toast.error('Failed to load jobs');
@@ -60,6 +68,14 @@ export default function EmployerDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   return (
@@ -172,6 +188,11 @@ export default function EmployerDashboard() {
                             Closed
                           </span>
                         )}
+                        {applicationCounts[job.id] > 0 && (
+                          <span className="px-2 py-1 bg-blue-500/20 border border-blue-500/50 rounded text-blue-300 text-xs">
+                            {applicationCounts[job.id]} {applicationCounts[job.id] === 1 ? 'Application' : 'Applications'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-white/70">{job.company}</p>
                       <p className="text-white/60 text-sm mt-1">
@@ -187,22 +208,26 @@ export default function EmployerDashboard() {
                       onClick={() => navigate(`/jobs/${job.id}`)}
                     >
                       <Eye className="w-4 h-4 mr-2" />
-                      View Details
+                      View Job Details
                     </GlassButton>
 
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = await api.get(`/jobs/${job.id}/applications`);
-                          toast.info(`${response.data.length} applications received`);
-                        } catch (error) {
-                          toast.error('Failed to load applications');
-                        }
-                      }}
-                      className="text-white/70 hover:text-white text-sm transition-colors"
-                    >
-                      View Applications
-                    </button>
+                    {applicationCounts[job.id] > 0 && (
+                      <GlassButton
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          navigate(`/jobs/${job.id}`);
+                          // Scroll to applications after navigation
+                          setTimeout(() => {
+                            const applicationsSection = document.getElementById('applications-section');
+                            applicationsSection?.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        View {applicationCounts[job.id]} {applicationCounts[job.id] === 1 ? 'Application' : 'Applications'}
+                      </GlassButton>
+                    )}
                   </div>
                 </div>
               ))}

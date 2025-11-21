@@ -27,6 +27,11 @@ def create_access_token(data: dict) -> str:
         Encoded JWT token string
     """
     to_encode = data.copy()
+    
+    # Convert 'sub' to string if it exists and is an integer
+    if 'sub' in to_encode and isinstance(to_encode['sub'], int):
+        to_encode['sub'] = str(to_encode['sub'])
+    
     expire = datetime.utcnow() + timedelta(days=settings.JWT_EXPIRATION_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
@@ -71,9 +76,16 @@ def verify_token(token: str) -> dict:
         print(f"   - Role: {payload.get('role')}")
         print(f"   - Expires: {payload.get('exp')}")
         
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             print("❌ Token missing 'sub' (user_id)")
+            raise credentials_exception
+        
+        # Convert string back to integer
+        try:
+            payload['sub'] = int(user_id_str)
+        except (ValueError, TypeError):
+            print("❌ Invalid user ID format")
             raise credentials_exception
             
         return payload
