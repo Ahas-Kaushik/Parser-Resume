@@ -3,6 +3,7 @@ import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
 import { Select } from '../ui/Select';
 import { GlassButton } from '../ui/GlassButton';
+import { EducationRequirements } from './EducationRequirements';
 import type { Job } from '../../types';
 
 interface JobFormProps {
@@ -24,6 +25,26 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
     required_any: initialData?.rules?.required_any?.join(', ') || '',
     min_years: initialData?.rules?.min_years || 0,
     similarity_threshold: initialData?.rules?.similarity_threshold || 0.6,
+  });
+
+  // NEW: Education Requirements State
+  const [educationRequirements, setEducationRequirements] = useState({
+    enabled: initialData?.rules?.education_requirements?.enabled || false,
+    minimum_qualification: initialData?.rules?.education_requirements?.minimum_qualification || {
+      level: '12th_diploma' as const,
+    },
+    degree_requirement: initialData?.rules?.education_requirements?.degree_requirement || {
+      enabled: false,
+      level: 'bachelor' as const,
+      fields: [],
+      accept_related_fields: true,
+    },
+    alternative_paths: initialData?.rules?.education_requirements?.alternative_paths || {
+      experience_substitute: {
+        enabled: false,
+        years_required: 5,
+      },
+    },
   });
 
   const handleChange = (
@@ -48,7 +69,7 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
         salary_range: formData.salary_range,
         employment_type: formData.employment_type,
         rules: {
-          version: 'v1',
+          version: 'v2', // Updated version
           required_all: formData.required_all
             .split(',')
             .map((s) => s.trim())
@@ -59,15 +80,19 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
             .filter((s) => s),
           min_years: Number(formData.min_years),
           similarity_threshold: Number(formData.similarity_threshold),
+          
+          // NEW: Include education requirements
+          education_requirements: educationRequirements,
+          
           scoring: {
             enabled: true,
-            threshold: 70.0,
+            threshold: 50.0, // Changed from 70 to 50 for more flexibility
             weights: {
-              skills_all: 30.0,
-              skills_any: 20.0,
-              experience: 20.0,
-              similarity: 25.0,
-              degree: 5.0,
+              skills_all: 25.0,
+              skills_any: 15.0,
+              experience: 15.0,
+              similarity: 20.0,
+              education: 25.0, // NEW: Education weight
             },
           },
         },
@@ -85,7 +110,7 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Basic Information */}
       <div className="space-y-4">
-        <h3 className="text-xl font-bold text-white">Basic Information</h3>
+        <h3 className="text-xl font-bold text-white">📝 Basic Information</h3>
 
         <Input
           label="Job Title"
@@ -148,7 +173,7 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
 
       {/* AI Screening Rules */}
       <div className="space-y-4 pt-6 border-t border-white/20">
-        <h3 className="text-xl font-bold text-white">AI Screening Rules</h3>
+        <h3 className="text-xl font-bold text-white">🤖 AI Screening Rules</h3>
 
         <Input
           label="Required Skills (Must Have) - Comma Separated"
@@ -191,9 +216,19 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
         <div className="p-4 bg-blue-500/20 border border-blue-500/50 rounded-xl">
           <p className="text-sm text-blue-200">
             <strong>Note:</strong> AI screening will automatically evaluate candidates based on these criteria.
-            Candidates must meet all required skills and similarity threshold to be selected.
+            Candidates must meet the similarity threshold and required skills to be selected.
           </p>
         </div>
+      </div>
+
+      {/* NEW: Education Requirements Section */}
+      <div className="space-y-4 pt-6 border-t border-white/20">
+        <h3 className="text-2xl font-bold text-white">🎓 Education Requirements</h3>
+        
+        <EducationRequirements
+          value={educationRequirements}
+          onChange={setEducationRequirements}
+        />
       </div>
 
       {/* Actions */}
