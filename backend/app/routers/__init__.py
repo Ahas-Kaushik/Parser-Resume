@@ -1,8 +1,6 @@
 """
-API Routers Package
-Import all routers here
+Routers Package
 """
 
-from app.routers import auth, jobs, chat
-
-__all__ = ["auth", "jobs", "chat"]
+# Don't import anything here to avoid circular imports
+# Let main.py import routers directly

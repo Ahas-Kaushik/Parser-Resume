@@ -1,24 +1,59 @@
 """
-Pydantic Schemas Package
-Request/Response validation schemas
+Schemas Package
+Export all schemas for easy importing
 """
 
 from app.schemas.user import (
-    UserBase, UserCreate, UserLogin, UserResponse, UserRole
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    Token,
+    UserRole
 )
+
 from app.schemas.job import (
-    JobBase, JobCreate, JobUpdate, JobResponse, JobRules
+    JobCreate,
+    JobUpdate,
+    JobResponse,
+    JobStats,
+    JobRules,
+    EducationRequirements,
+    GradeConfig,
+    MinimumQualificationConfig,
+    DegreeRequirementConfig,
+    ExperienceSubstituteConfig,
+    AlternativePathsConfig
 )
+
 from app.schemas.application import (
-    ApplicationCreate, ApplicationResponse, ApplicationStatus
-)
-from app.schemas.chat import (
-    ChatMessageCreate, ChatMessageResponse
+    ApplicationResponse,
+    ApplicationListResponse,
+    ApplicationStatus
 )
 
 __all__ = [
-    "UserBase", "UserCreate", "UserLogin", "UserResponse", "UserRole",
-    "JobBase", "JobCreate", "JobUpdate", "JobResponse", "JobRules",
-    "ApplicationCreate", "ApplicationResponse", "ApplicationStatus",
-    "ChatMessageCreate", "ChatMessageResponse"
+    # User schemas
+    "UserCreate",
+    "UserLogin",
+    "UserResponse",
+    "Token",
+    "UserRole",
+    
+    # Job schemas
+    "JobCreate",
+    "JobUpdate",
+    "JobResponse",
+    "JobStats",
+    "JobRules",
+    "EducationRequirements",
+    "GradeConfig",
+    "MinimumQualificationConfig",
+    "DegreeRequirementConfig",
+    "ExperienceSubstituteConfig",
+    "AlternativePathsConfig",
+    
+    # Application schemas
+    "ApplicationResponse",
+    "ApplicationListResponse",
+    "ApplicationStatus"
 ]

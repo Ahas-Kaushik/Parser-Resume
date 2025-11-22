@@ -183,3 +183,75 @@ export interface ToastMessage {
   message: string;
   duration?: number;
 }
+
+// ... existing types ...
+
+export interface GradeInfo {
+  raw_value: string;
+  type: 'cgpa_10' | 'percentage' | 'gpa_4';
+  normalized_percentage: number;
+  confidence: number;
+  context?: string;
+}
+
+export interface EducationQualification {
+  level: string;
+  field?: string;
+  year?: number;
+  grade?: GradeInfo;
+  detected_text?: string;
+}
+
+export interface EducationExplanation {
+  enabled?: boolean;
+  minimum_qualification_met?: boolean;
+  degree_requirement_met?: boolean;
+  candidate_highest?: string;
+  candidate_field?: string;
+  candidate_grade?: GradeInfo;
+  all_qualifications?: EducationQualification[];
+}
+
+export interface Explanation {
+  summary?: {
+    passed: boolean;
+    reasons_pass: string[];
+    reasons_fail: string[];
+  };
+  skills?: {
+    candidate_skills: string[];
+    matched_required_all: string[];
+    missing_required_all: string[];
+    matched_required_any: string[];
+    similarity: number;
+  };
+  experience?: {
+    estimated_years: number;
+    min_required_years: number;
+    meets_requirement: boolean;
+  };
+  education?: EducationExplanation; // NEW!
+  scoring?: {
+    enabled: boolean;
+    score: number;
+    threshold: number;
+    weights: Record<string, number>;
+  };
+}
+
+export interface Application {
+  id: number;
+  job_id: number;
+  candidate_id: number;
+  name: string;
+  phone: string;
+  current_company?: string;
+  current_position?: string;
+  current_salary?: number;
+  resume_path: string;
+  status: 'pending' | 'selected' | 'rejected' | 'withdrawn';
+  score?: number;
+  explanation?: Explanation;
+  created_at: string;
+  updated_at?: string;
+}

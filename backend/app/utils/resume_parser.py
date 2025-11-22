@@ -1,11 +1,11 @@
 """
 AI-Powered Resume Parser - ENHANCED VERSION
-Evaluates resumes against job requirements using ML
+Evaluates resumes against job requirements using ML with smart grade conversion
 """
 
 import os
 import re
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from pypdf import PdfReader
 from docx import Document
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -14,7 +14,314 @@ from datetime import datetime
 
 
 # ========================================
-# SKILL LEXICON (Expandable)
+# GRADE CONVERSION CONSTANTS
+# ========================================
+
+GRADE_CONVERSION = {
+    "cgpa_10": lambda x: x * 10,           # 8.5 CGPA → 85%
+    "cgpa_10_strict": lambda x: (x - 0.5) * 10,  # Some institutions use this
+    "gpa_4": lambda x: (x / 4) * 100,      # 3.5 GPA → 87.5%
+    "percentage": lambda x: x,              # Already percentage
+}
+
+LETTER_GRADE_MAP = {
+    "a+": 95, "a": 90, "a-": 85,
+    "b+": 80, "b": 75, "b-": 70,
+    "c+": 65, "c": 60, "c-": 55,
+    "d+": 52, "d": 50, "d-": 45,
+    "f": 0, "fail": 0
+}
+
+CLASS_SYSTEM_MAP = {
+    "first class with distinction": 75,
+    "first class": 60,
+    "second class": 50,
+    "third class": 40,
+    "pass class": 35
+}
+
+# Education field synonyms for fuzzy matching
+FIELD_SYNONYMS = {
+    "computer science": ["cs", "cse", "computer science and engineering", "computer applications", "computing"],
+    "information technology": ["it", "information tech", "info tech"],
+    "software engineering": ["se", "software development"],
+    "electronics": ["ece", "electronics and communication", "electronics & communication"],
+    "mechanical": ["me", "mechanical engineering"],
+    "civil": ["ce", "civil engineering"],
+    "electrical": ["ee", "electrical engineering", "eee"],
+}
+
+
+# ========================================
+# GRADE PARSING PATTERNS
+# ========================================
+
+GRADE_PATTERNS = {
+    "cgpa_10": [
+        r"(\d+\.?\d*)\s*(?:cgpa|CGPA)",
+        r"CGPA\s*[:\-]?\s*(\d+\.?\d*)",
+        r"(?:cgpa|CGPA)\s*(?:of)?\s*(\d+\.?\d*)\s*/\s*10",
+        r"(\d+\.?\d*)\s*/\s*10\s*(?:cgpa|CGPA)",
+    ],
+    "gpa_4": [
+        r"(\d+\.?\d*)\s*(?:gpa|GPA)",
+        r"GPA\s*[:\-]?\s*(\d+\.?\d*)\s*/\s*4",
+        r"(\d+\.?\d*)\s*/\s*4\s*(?:gpa|GPA)",
+    ],
+    "percentage": [
+        r"(\d+\.?\d*)\s*%",
+        r"(\d+\.?\d*)\s*percent",
+        r"percentage\s*[:\-]?\s*(\d+\.?\d*)",
+        r"marks\s*[:\-]?\s*(\d+\.?\d*)%?",
+    ],
+}
+
+DEGREE_PATTERNS = {
+    "phd": r"\bph\.?d\.?\b|\bdoctor(?:ate)?\b|\bdoctoral\b",
+    "master": r"\bmaster'?s?\b|\bms\b|\bm\.sc\.?\b|\bmsc\b|\bmba\b|\bm\.tech\b|\bmtech\b|\bma\b|\bmca\b",
+    "bachelor": r"\bbachelor'?s?\b|\bbs\b|\bb\.sc\.?\b|\bbsc\b|\bb\.tech\b|\bbtech\b|\bb\.e\.?\b|\bbe\b|\bba\b|\bbca\b|\bundergraduate\b",
+    "12th": r"\b12th\b|\bhigher\s+secondary\b|\bintermediate\b|\bclass\s+12\b|\bxii\b|\b\+2\b",
+    "diploma": r"\bdiploma\b|\bpolytechnic\b",
+    "10th": r"\b10th\b|\bsecondary\b|\bclass\s+10\b|\bx\b|\bmatric\b",
+}
+
+DEGREE_ORDER = {"none": 0, "10th": 1, "12th": 2, "diploma": 2, "bachelor": 3, "master": 4, "phd": 5}
+
+
+# ========================================
+# HELPER FUNCTIONS
+# ========================================
+
+def normalize_text(text: str) -> str:
+    """Normalize text: lowercase and remove extra spaces"""
+    return " ".join(text.lower().split())
+
+
+def _normalize_phrase(phrase: str) -> str:
+    """Normalize a phrase for matching"""
+    return re.sub(r"\s+", " ", phrase.strip().lower())
+
+
+def read_text_from_file(file_path: str) -> str:
+    """Extract text from PDF, DOCX, or TXT file"""
+    ext = os.path.splitext(file_path)[1].lower()
+    
+    try:
+        if ext == ".pdf":
+            reader = PdfReader(file_path)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            return text
+        elif ext == ".docx":
+            doc = Document(file_path)
+            text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+            return text
+        else:  # .txt or unknown
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}")
+        return ""
+
+
+# ========================================
+# GRADE EXTRACTION & CONVERSION
+# ========================================
+
+def extract_grade_from_text(text: str, context: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Extract grade information from text with smart detection
+    
+    Returns:
+        {
+            "raw_value": "8.5",
+            "type": "cgpa_10",
+            "normalized_percentage": 85.0,
+            "confidence": 0.95,
+            "context": "Bachelor of Technology (8.5 CGPA)"
+        }
+    """
+    text_normalized = normalize_text(text)
+    
+    # Try to extract grade with context
+    for grade_type, patterns in GRADE_PATTERNS.items():
+        for pattern in patterns:
+            match = re.search(pattern, text_normalized)
+            if match:
+                try:
+                    value = float(match.group(1))
+                    
+                    # Validate ranges
+                    if grade_type == "cgpa_10" and (value < 0 or value > 10):
+                        continue
+                    if grade_type == "gpa_4" and (value < 0 or value > 4):
+                        continue
+                    if grade_type == "percentage" and (value < 0 or value > 100):
+                        continue
+                    
+                    # Convert to percentage
+                    converter = GRADE_CONVERSION.get(grade_type, lambda x: x)
+                    normalized = converter(value)
+                    
+                    return {
+                        "raw_value": str(value),
+                        "type": grade_type,
+                        "normalized_percentage": round(normalized, 2),
+                        "confidence": 0.9,
+                        "context": context[:100] if context else text[:100]
+                    }
+                except (ValueError, IndexError):
+                    continue
+    
+    return None
+
+
+def extract_education_with_grades(text: str) -> List[Dict[str, Any]]:
+    """
+    Enhanced education extraction with grades
+    
+    Returns list of education entries with grades:
+    [
+        {
+            "level": "bachelor",
+            "field": "Computer Science",
+            "institution": "ABC University",
+            "year": 2020,
+            "grade": {...},
+            "detected_text": "..."
+        }
+    ]
+    """
+    qualifications = []
+    lines = text.split('\n')
+    
+    for i, line in enumerate(lines):
+        line_normalized = normalize_text(line)
+        
+        # Check for degree keywords
+        for degree_level, pattern in DEGREE_PATTERNS.items():
+            if re.search(pattern, line_normalized):
+                # Try to extract grade from this line or next 2 lines
+                context_text = " ".join(lines[i:min(i+3, len(lines))])
+                grade_info = extract_grade_from_text(context_text, line)
+                
+                # Try to extract field
+                field = extract_field_from_line(line)
+                
+                # Try to extract year
+                year = extract_year_from_line(line)
+                
+                qualification = {
+                    "level": degree_level,
+                    "field": field,
+                    "year": year,
+                    "grade": grade_info,
+                    "detected_text": line[:200]
+                }
+                
+                qualifications.append(qualification)
+                break
+    
+    return qualifications
+
+
+def extract_field_from_line(line: str) -> Optional[str]:
+    """Extract field of study from education line"""
+    line_lower = line.lower()
+    
+    # Common field patterns
+    field_patterns = [
+        r"(?:in|of)\s+([\w\s&]+?)(?:\(|from|with|$)",
+        r"(?:bachelor|master|b\.tech|m\.tech|bsc|msc)\s+(?:of|in)?\s+([\w\s&]+?)(?:\(|from|with|,|$)",
+    ]
+    
+    for pattern in field_patterns:
+        match = re.search(pattern, line_lower)
+        if match:
+            field = match.group(1).strip()
+            # Clean up
+            field = re.sub(r'\s+', ' ', field)
+            if len(field) > 5 and len(field) < 50:
+                return field.title()
+    
+    return None
+
+
+def extract_year_from_line(line: str) -> Optional[int]:
+    """Extract graduation year from education line"""
+    year_pattern = r'\b(19\d{2}|20\d{2})\b'
+    matches = re.findall(year_pattern, line)
+    if matches:
+        years = [int(y) for y in matches]
+        return max(years)  # Return most recent year
+    return None
+
+
+def get_highest_qualification(qualifications: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Get highest qualification from list"""
+    if not qualifications:
+        return {
+            "level": "none",
+            "field": None,
+            "grade": None
+        }
+    
+    highest = max(qualifications, key=lambda q: DEGREE_ORDER.get(q["level"], 0))
+    return highest
+
+
+def normalize_field_name(field: str) -> str:
+    """Normalize field name for comparison"""
+    if not field:
+        return ""
+    
+    field_lower = field.lower().strip()
+    
+    # Check synonyms
+    for canonical, synonyms in FIELD_SYNONYMS.items():
+        if field_lower == canonical or field_lower in synonyms:
+            return canonical
+        for syn in synonyms:
+            if syn in field_lower or field_lower in syn:
+                return canonical
+    
+    return field_lower
+
+
+def check_field_match(candidate_field: str, required_fields: List[str], accept_related: bool = False) -> Tuple[bool, str]:
+    """
+    Check if candidate's field matches required fields
+    
+    Returns: (matches: bool, matched_field: str)
+    """
+    if not candidate_field or not required_fields:
+        return False, ""
+    
+    candidate_normalized = normalize_field_name(candidate_field)
+    
+    for req_field in required_fields:
+        req_normalized = normalize_field_name(req_field)
+        
+        # Exact match
+        if candidate_normalized == req_normalized:
+            return True, req_field
+        
+        # Fuzzy match if accept_related is True
+        if accept_related:
+            # Check if one contains the other
+            if req_normalized in candidate_normalized or candidate_normalized in req_normalized:
+                return True, req_field
+            
+            # Check synonym groups
+            for canonical, synonyms in FIELD_SYNONYMS.items():
+                if (candidate_normalized == canonical or candidate_normalized in synonyms) and \
+                   (req_normalized == canonical or req_normalized in synonyms):
+                    return True, req_field
+    
+    return False, ""
+
+
+# ========================================
+# SKILL EXTRACTION (Keep existing code)
 # ========================================
 
 SKILL_SYNONYMS: Dict[str, List[str]] = {
@@ -63,16 +370,6 @@ SKILL_SYNONYMS: Dict[str, List[str]] = {
 }
 
 
-def normalize_text(text: str) -> str:
-    """Normalize text: lowercase and remove extra spaces"""
-    return " ".join(text.lower().split())
-
-
-def _normalize_phrase(phrase: str) -> str:
-    """Normalize a phrase for matching"""
-    return re.sub(r"\s+", " ", phrase.strip().lower())
-
-
 def build_canonical_map() -> Dict[str, str]:
     """Build mapping from all skill variations to canonical form"""
     mapping = {}
@@ -87,56 +384,8 @@ def build_canonical_map() -> Dict[str, str]:
 CANON_MAP = build_canonical_map()
 
 
-# ========================================
-# DOCUMENT PARSING
-# ========================================
-
-def read_text_from_file(file_path: str) -> str:
-    """
-    Extract text from PDF, DOCX, or TXT file
-    
-    Args:
-        file_path: Path to the resume file
-    
-    Returns:
-        Extracted text as string
-    """
-    ext = os.path.splitext(file_path)[1].lower()
-    
-    try:
-        if ext == ".pdf":
-            reader = PdfReader(file_path)
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-            return text
-        
-        elif ext == ".docx":
-            doc = Document(file_path)
-            text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-            return text
-        
-        else:  # .txt or unknown
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()
-    
-    except Exception as e:
-        print(f"Error reading file {file_path}: {e}")
-        return ""
-
-
-# ========================================
-# SKILL EXTRACTION - ENHANCED
-# ========================================
-
 def extract_skills_lexicon(text: str) -> Tuple[List[str], Dict[str, List[str]]]:
-    """
-    Extract skills using FUZZY lexicon matching (case-insensitive, flexible)
-    
-    Args:
-        text: Resume text (normalized)
-    
-    Returns:
-        Tuple of (list of canonical skills, details dict)
-    """
+    """Extract skills using lexicon matching"""
     text_normalized = normalize_text(text)
     details: Dict[str, List[str]] = {}
     
@@ -147,7 +396,6 @@ def extract_skills_lexicon(text: str) -> Tuple[List[str], Dict[str, List[str]]]:
             if not form_normalized:
                 continue
             
-            # FLEXIBLE MATCHING: both substring and word boundary
             if form_normalized in text_normalized or re.search(rf"\b{re.escape(form_normalized)}\b", text_normalized):
                 canonical_skill = CANON_MAP.get(form_normalized, form_normalized)
                 details.setdefault(canonical_skill, []).append(form_normalized)
@@ -156,16 +404,7 @@ def extract_skills_lexicon(text: str) -> Tuple[List[str], Dict[str, List[str]]]:
 
 
 def fallback_tfidf_keyphrases(text: str, top_k: int = 20) -> List[str]:
-    """
-    Extract key phrases using TF-IDF as fallback (INCREASED top_k)
-    
-    Args:
-        text: Resume text
-        top_k: Number of top phrases to extract
-    
-    Returns:
-        List of key phrases
-    """
+    """Extract key phrases using TF-IDF as fallback"""
     if not text.strip():
         return []
     
@@ -181,7 +420,6 @@ def fallback_tfidf_keyphrases(text: str, top_k: int = 20) -> List[str]:
         feature_names = vectorizer.get_feature_names_out()
         scores = X.toarray()[0]
         
-        # Get top phrases
         top_indices = scores.argsort()[::-1]
         phrases = []
         for idx in top_indices:
@@ -192,7 +430,6 @@ def fallback_tfidf_keyphrases(text: str, top_k: int = 20) -> List[str]:
                 break
         
         return phrases
-    
     except Exception as e:
         print(f"TF-IDF extraction failed: {e}")
         return []
@@ -216,23 +453,13 @@ DATE_RANGE_PATTERN = re.compile(r"(20\d{2}|19\d{2})\s*[-–—]\s*(20\d{2}|19\d{
 
 
 def estimate_years_of_experience(text: str) -> float:
-    """
-    ENHANCED: Estimate years from both explicit mentions AND date ranges
-    
-    Args:
-        text: Resume text
-    
-    Returns:
-        Estimated years (float)
-    """
-    # Method 1: Explicit "X years" mentions
+    """ENHANCED: Estimate years from both explicit mentions AND date ranges"""
     matches = YEARS_PATTERN.findall(text)
     max_years_explicit = 0
     for match in matches:
         years = int(match[0])
         max_years_explicit = max(max_years_explicit, years)
     
-    # Method 2: Date range calculation
     date_matches = DATE_RANGE_PATTERN.findall(text)
     max_years_dates = 0
     current_year = datetime.now().year
@@ -250,10 +477,8 @@ def estimate_years_of_experience(text: str) -> float:
         except:
             continue
     
-    # Return the maximum from both methods
     total_years = max(max_years_explicit, max_years_dates)
     
-    # If we found date ranges, add them up (total experience across jobs)
     if date_matches:
         total_experience = 0
         for start, end in date_matches:
@@ -272,39 +497,32 @@ def estimate_years_of_experience(text: str) -> float:
 
 
 # ========================================
-# DEGREE & EDUCATION EXTRACTION - ENHANCED
+# SIMILARITY CALCULATION - ENHANCED
 # ========================================
 
-DEGREE_PATTERNS = {
-    "phd": r"\bph\.?d\.?\b|\bdoctor(?:ate)?\b|\bdoctoral\b",
-    "master": r"\bmaster'?s?\b|\bms\b|\bm\.sc\.?\b|\bmsc\b|\bmba\b|\bm\.tech\b|\bmtech\b|\bma\b",
-    "bachelor": r"\bbachelor'?s?\b|\bbs\b|\bb\.sc\.?\b|\bbsc\b|\bb\.tech\b|\bbtech\b|\bb\.e\.?\b|\bbe\b|\bba\b|\bundergraduate\b",
-    "associate": r"\bassociate'?s?\b|\bas\b|\bdiploma\b",
-}
-
-DEGREE_ORDER = {"none": 0, "associate": 1, "bachelor": 2, "master": 3, "phd": 4}
-
-
-def extract_degrees(text: str) -> List[str]:
-    """Extract degree levels from resume"""
-    found = []
-    for degree, pattern in DEGREE_PATTERNS.items():
-        if re.search(pattern, text, re.IGNORECASE):
-            found.append(degree)
-    return sorted(set(found))
-
-
-def get_highest_degree(degrees: List[str]) -> str:
-    """Get highest degree from list"""
-    if not degrees:
-        return "none"
+def compute_similarity(candidate_skills: List[str], required_skills: List[str]) -> float:
+    """ENHANCED: Compute similarity with better handling"""
+    if not candidate_skills or not required_skills:
+        return 0.0
     
-    highest = "none"
-    for degree in degrees:
-        if DEGREE_ORDER.get(degree, 0) > DEGREE_ORDER.get(highest, 0):
-            highest = degree
-    
-    return highest
+    try:
+        exact_matches = len(set(candidate_skills) & set(required_skills))
+        exact_ratio = exact_matches / len(required_skills) if required_skills else 0.0
+        
+        candidate_doc = " ".join(candidate_skills)
+        required_doc = " ".join(required_skills)
+        
+        vectorizer = TfidfVectorizer()
+        vectors = vectorizer.fit_transform([candidate_doc, required_doc])
+        
+        cosine_sim = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
+        
+        combined_similarity = (exact_ratio * 0.6) + (cosine_sim * 0.4)
+        
+        return float(combined_similarity)
+    except Exception as e:
+        print(f"Similarity calculation failed: {e}")
+        return 0.0
 
 
 # ========================================
@@ -332,49 +550,6 @@ def has_work_authorization(text: str) -> bool:
 
 
 # ========================================
-# SIMILARITY CALCULATION - ENHANCED
-# ========================================
-
-def compute_similarity(candidate_skills: List[str], required_skills: List[str]) -> float:
-    """
-    ENHANCED: Compute similarity with better handling
-    
-    Args:
-        candidate_skills: Skills found in resume
-        required_skills: Skills required for job
-    
-    Returns:
-        Similarity score (0.0 to 1.0)
-    """
-    if not candidate_skills or not required_skills:
-        return 0.0
-    
-    try:
-        # Method 1: Exact match ratio (bonus for direct matches)
-        exact_matches = len(set(candidate_skills) & set(required_skills))
-        exact_ratio = exact_matches / len(required_skills) if required_skills else 0.0
-        
-        # Method 2: TF-IDF cosine similarity
-        candidate_doc = " ".join(candidate_skills)
-        required_doc = " ".join(required_skills)
-        
-        vectorizer = TfidfVectorizer()
-        vectors = vectorizer.fit_transform([candidate_doc, required_doc])
-        
-        cosine_sim = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
-        
-        # Combine both methods (weighted average)
-        # Give more weight to exact matches
-        combined_similarity = (exact_ratio * 0.6) + (cosine_sim * 0.4)
-        
-        return float(combined_similarity)
-    
-    except Exception as e:
-        print(f"Similarity calculation failed: {e}")
-        return 0.0
-
-
-# ========================================
 # MAIN EVALUATION FUNCTION - ENHANCED
 # ========================================
 
@@ -384,18 +559,9 @@ def evaluate_resume(
     job_description: str = ""
 ) -> Dict[str, Any]:
     """
-    ENHANCED: Evaluate a resume with FLEXIBLE scoring
-    
-    Args:
-        resume_path: Path to resume file
-        rules: Job screening rules dict
-        job_description: Job description text (optional)
-    
-    Returns:
-        Evaluation result dictionary with decision, score, and explanation
+    ENHANCED: Evaluate a resume with FLEXIBLE scoring and education validation
     """
     
-    # Extract text from resume
     raw_text = read_text_from_file(resume_path)
     if not raw_text.strip():
         return {
@@ -411,30 +577,26 @@ def evaluate_resume(
     print(f"📄 Evaluating: {os.path.basename(resume_path)}")
     print(f"{'='*60}")
     
-    # ========================================
-    # EXTRACT CANDIDATE INFORMATION
-    # ========================================
-    
     # Extract skills
     lexicon_skills, skill_details = extract_skills_lexicon(normalized_text)
-    
     if lexicon_skills:
         candidate_skills = lexicon_skills
     else:
-        # Fallback to TF-IDF
         candidate_skills = fallback_tfidf_keyphrases(normalized_text, top_k=20)
     
     candidate_skills = canonicalize_skills(candidate_skills)
-    print(f"🔧 Candidate Skills Found: {candidate_skills[:10]}")  # Show first 10
+    print(f"🔧 Candidate Skills Found: {candidate_skills[:10]}")
     
     # Extract experience
     years_experience = estimate_years_of_experience(normalized_text)
     print(f"💼 Years of Experience: {years_experience}")
     
-    # Extract education
-    degrees = extract_degrees(normalized_text)
-    highest_degree = get_highest_degree(degrees)
-    print(f"🎓 Highest Degree: {highest_degree}")
+    # Extract education WITH GRADES
+    education_entries = extract_education_with_grades(raw_text)
+    highest_qualification = get_highest_qualification(education_entries)
+    print(f"🎓 Highest Qualification: {highest_qualification['level']}")
+    if highest_qualification['grade']:
+        print(f"   Grade: {highest_qualification['grade']['raw_value']} ({highest_qualification['grade']['type']}) = {highest_qualification['grade']['normalized_percentage']}%")
     
     # Check work authorization
     has_auth = has_work_authorization(normalized_text)
@@ -448,21 +610,20 @@ def evaluate_resume(
     any_min = rules.get("any_min", 0)
     min_years = rules.get("min_years", 0)
     forbidden_keywords = [normalize_text(kw) for kw in rules.get("forbidden_keywords", [])]
-    similarity_threshold = rules.get("similarity_threshold", 0.3)  # LOWERED from 0.6 to 0.3
+    similarity_threshold = rules.get("similarity_threshold", 0.3)
     
-    allowed_degrees = [d.lower() for d in rules.get("allowed_degrees", [])]
-    min_degree_level = rules.get("min_degree_level", "none")
-    allowed_locations = [normalize_text(loc) for loc in rules.get("allowed_locations", [])]
-    allow_remote = rules.get("allow_remote", True)
-    require_work_auth = rules.get("require_work_auth", False)
+    # NEW: Education requirements
+    education_req = rules.get("education_requirements", {})
+    education_enabled = education_req.get("enabled", False)
     
     scoring_config = rules.get("scoring", {})
     scoring_enabled = scoring_config.get("enabled", True)
-    score_threshold = scoring_config.get("threshold", 50.0)  # LOWERED from 70 to 50
+    score_threshold = scoring_config.get("threshold", 50.0)
     weights = scoring_config.get("weights", {})
     
     print(f"📋 Required Skills (ALL): {required_all}")
     print(f"📋 Required Skills (ANY): {required_any} (min: {any_min})")
+    print(f"🎓 Education Required: {education_enabled}")
     
     # ========================================
     # RULE CHECKS - FLEXIBLE MODE
@@ -471,7 +632,7 @@ def evaluate_resume(
     reasons_pass = []
     reasons_fail = []
     
-    # 1. Forbidden keywords (STRICT - must pass)
+    # 1. Forbidden keywords (STRICT)
     forbidden_found = [kw for kw in forbidden_keywords if kw in normalized_text]
     check_forbidden = len(forbidden_found) == 0
     
@@ -480,13 +641,13 @@ def evaluate_resume(
     else:
         reasons_fail.append(f"Contains forbidden keywords: {', '.join(forbidden_found)}")
     
-    # 2. Required ALL skills (FLEXIBLE - give partial credit)
+    # 2. Required ALL skills (FLEXIBLE)
     matched_all = [s for s in required_all if s in candidate_skills]
     missing_all = [s for s in required_all if s not in candidate_skills]
     
     if required_all:
         all_match_ratio = len(matched_all) / len(required_all)
-        check_all = all_match_ratio >= 0.5  # FLEXIBLE: need 50% instead of 100%
+        check_all = all_match_ratio >= 0.5
         
         if check_all:
             reasons_pass.append(f"Has {len(matched_all)}/{len(required_all)} required skills ({all_match_ratio*100:.0f}%)")
@@ -496,13 +657,12 @@ def evaluate_resume(
         check_all = True
         reasons_pass.append("No required skills specified")
     
-    # 3. Required ANY skills (FLEXIBLE)
+    # 3. Required ANY skills
     matched_any = [s for s in required_any if s in candidate_skills]
-    missing_any = [s for s in required_any if s not in candidate_skills]
     check_any = True
     
     if required_any:
-        check_any = len(matched_any) >= max(1, any_min // 2)  # FLEXIBLE: need half the minimum
+        check_any = len(matched_any) >= max(1, any_min // 2)
         if check_any:
             reasons_pass.append(f"Has {len(matched_any)} of preferred skills")
         else:
@@ -510,7 +670,7 @@ def evaluate_resume(
     
     # 4. Experience (FLEXIBLE - 80% is acceptable)
     if min_years > 0:
-        check_experience = years_experience >= (min_years * 0.8)  # FLEXIBLE: 80% is OK
+        check_experience = years_experience >= (min_years * 0.8)
         if check_experience:
             reasons_pass.append(f"Experience OK ({years_experience}y >= {min_years * 0.8:.1f}y)")
         else:
@@ -519,42 +679,112 @@ def evaluate_resume(
         check_experience = True
         reasons_pass.append("No experience requirement")
     
-    # 5. Degree (FLEXIBLE - one level below is acceptable)
-    check_degree = True
-    if allowed_degrees:
-        check_degree = any(d in allowed_degrees for d in degrees) or ("none" in allowed_degrees and not degrees)
+    # 5. NEW: Education validation
+    check_education = True
+    education_details = {}
     
-    if min_degree_level and min_degree_level != "none":
-        required_level = DEGREE_ORDER.get(min_degree_level, 0)
-        candidate_level = DEGREE_ORDER.get(highest_degree, 0)
-        # FLEXIBLE: allow one level below (bachelor OK for master requirement)
-        check_degree = check_degree and (candidate_level >= required_level - 1)
+    if education_enabled:
+        min_qual_config = education_req.get("minimum_qualification", {})
+        degree_req_config = education_req.get("degree_requirement", {})
         
-        if not check_degree:
-            reasons_fail.append(f"Degree level too low (has {highest_degree}, need {min_degree_level})")
-    
-    if check_degree:
-        if allowed_degrees or min_degree_level:
-            reasons_pass.append(f"Degree requirement met ({highest_degree})")
+        # Check minimum qualification
+        min_level_required = min_qual_config.get("level", "12th_diploma")
+        candidate_level_order = DEGREE_ORDER.get(highest_qualification["level"], 0)
+        
+        # Handle 12th_diploma special case (either is acceptable)
+        if min_level_required == "12th_diploma":
+            required_level_order = 2  # Both 12th and diploma have order 2
+            check_min_level = candidate_level_order >= required_level_order
         else:
-            reasons_pass.append("No degree requirement")
-    
-    # 6. Location (FLEXIBLE - always pass if allow_remote)
-    check_location = True
-    if allowed_locations:
-        check_location = any(loc in normalized_text for loc in allowed_locations)
-        if not check_location and allow_remote:
-            check_location = True  # Remote work allowed
-            reasons_pass.append("Remote work acceptable")
-        elif check_location:
-            reasons_pass.append("Location requirement met")
-        else:
-            reasons_fail.append("Location not in allowed list and remote not allowed")
+            required_level_order = DEGREE_ORDER.get(min_level_required, 0)
+            check_min_level = candidate_level_order >= required_level_order
+        
+        # Check minimum qualification grade if specified
+        min_grade_config = min_qual_config.get("grade", {})
+        check_min_grade = True
+        
+        if min_grade_config.get("required") and highest_qualification.get("grade"):
+            required_percentage = min_grade_config.get("normalized", 0)
+            candidate_percentage = highest_qualification["grade"]["normalized_percentage"]
+            check_min_grade = candidate_percentage >= required_percentage
+            
+            if not check_min_grade:
+                reasons_fail.append(f"Minimum qualification grade too low ({candidate_percentage}% < {required_percentage}%)")
+        
+        # Check degree requirement if enabled
+        check_degree_req = True
+        field_match = False
+        matched_field = ""
+        
+        if degree_req_config.get("enabled"):
+            required_degree_level = degree_req_config.get("level", "bachelor")
+            required_degree_order = DEGREE_ORDER.get(required_degree_level, 0)
+            check_degree_level = candidate_level_order >= required_degree_order
+            
+            # Check field
+            required_fields = degree_req_config.get("fields", [])
+            accept_related = degree_req_config.get("accept_related_fields", False)
+            
+            if highest_qualification.get("field") and required_fields:
+                field_match, matched_field = check_field_match(
+                    highest_qualification["field"],
+                    required_fields,
+                    accept_related
+                )
+            
+            # Check degree grade
+            degree_grade_config = degree_req_config.get("grade", {})
+            check_degree_grade = True
+            
+            if degree_grade_config and highest_qualification.get("grade"):
+                required_degree_percentage = degree_grade_config.get("normalized", 0)
+                candidate_degree_percentage = highest_qualification["grade"]["normalized_percentage"]
+                check_degree_grade = candidate_degree_percentage >= required_degree_percentage
+                
+                if not check_degree_grade:
+                    reasons_fail.append(f"Degree grade too low ({candidate_degree_percentage}% < {required_degree_percentage}%)")
+            
+            check_degree_req = check_degree_level and field_match and check_degree_grade
+            
+            if check_degree_req:
+                reasons_pass.append(f"Has required {required_degree_level} in {matched_field} with adequate grade")
+            else:
+                if not check_degree_level:
+                    reasons_fail.append(f"Degree level too low (has {highest_qualification['level']}, need {required_degree_level})")
+                if not field_match:
+                    reasons_fail.append(f"Field mismatch (has {highest_qualification.get('field', 'unknown')}, need one of {required_fields})")
+        
+        # Check alternative paths (experience substitute)
+        alt_paths = education_req.get("alternative_paths", {})
+        exp_substitute = alt_paths.get("experience_substitute", {})
+        
+        if exp_substitute.get("enabled") and not check_degree_req:
+            required_exp_years = exp_substitute.get("years_required", 5)
+            if years_experience >= required_exp_years:
+                check_degree_req = True
+                reasons_pass.append(f"Experience ({years_experience}y) substitutes for degree requirement")
+        
+        check_education = check_min_level and check_min_grade and check_degree_req
+        
+        education_details = {
+            "minimum_qualification_met": check_min_level and check_min_grade,
+            "degree_requirement_met": check_degree_req if degree_req_config.get("enabled") else None,
+            "candidate_highest": highest_qualification["level"],
+            "candidate_field": highest_qualification.get("field"),
+            "candidate_grade": highest_qualification.get("grade"),
+            "all_qualifications": education_entries
+        }
     else:
-        reasons_pass.append("No location requirement")
+        reasons_pass.append("No education requirement")
+        education_details = {
+            "enabled": False,
+            "candidate_highest": highest_qualification["level"],
+            "all_qualifications": education_entries
+        }
     
-    # 7. Work authorization (FLEXIBLE - only fail if explicitly required)
+    # 6. Work authorization
     check_work_auth = True
+    require_work_auth = rules.get("require_work_auth", False)
     if require_work_auth:
         check_work_auth = has_auth
         if check_work_auth:
@@ -564,7 +794,7 @@ def evaluate_resume(
     else:
         reasons_pass.append("Work authorization not required")
     
-    # 8. Similarity (FLEXIBLE - lowered threshold)
+    # 7. Similarity
     target_skills = canonicalize_skills(required_all + required_any)
     if not target_skills and job_description:
         jd_skills, _ = extract_skills_lexicon(normalize_text(job_description))
@@ -587,11 +817,11 @@ def evaluate_resume(
     
     score = None
     if scoring_enabled:
-        w_all = weights.get("skills_all", 30.0)
-        w_any = weights.get("skills_any", 20.0)
-        w_exp = weights.get("experience", 20.0)
-        w_sim = weights.get("similarity", 25.0)
-        w_deg = weights.get("degree", 5.0)
+        w_all = weights.get("skills_all", 25.0)
+        w_any = weights.get("skills_any", 15.0)
+        w_exp = weights.get("experience", 15.0)
+        w_sim = weights.get("similarity", 20.0)
+        w_edu = weights.get("education", 25.0)  # NEW: Education weight
         
         score = 0.0
         
@@ -600,14 +830,14 @@ def evaluate_resume(
             all_ratio = len(matched_all) / len(required_all)
             score += w_all * all_ratio
         else:
-            score += w_all  # Full points if not required
+            score += w_all
         
         # Required any skills (PARTIAL CREDIT)
         if required_any and any_min > 0:
             any_ratio = min(1.0, len(matched_any) / any_min)
             score += w_any * any_ratio
         else:
-            score += w_any  # Full points if not required
+            score += w_any
         
         # Experience (SCALED - partial credit)
         if min_years > 0:
@@ -619,46 +849,52 @@ def evaluate_resume(
         # Similarity (0-1 scaled)
         score += w_sim * max(0.0, min(1.0, similarity / max(similarity_threshold, 0.01)))
         
-        # Degree (PARTIAL CREDIT for close matches)
-        if min_degree_level and min_degree_level != "none":
-            required_level = DEGREE_ORDER.get(min_degree_level, 0)
-            candidate_level = DEGREE_ORDER.get(highest_degree, 0)
-            degree_ratio = min(1.0, candidate_level / max(required_level, 1))
-            score += w_deg * degree_ratio
+        # Education (NEW: Partial credit based on level + grade)
+        if education_enabled:
+            edu_score = 0.0
+            
+            # Level component (50% of education weight)
+            if min_level_required:
+                level_ratio = min(1.0, candidate_level_order / max(required_level_order, 1))
+                edu_score += (w_edu * 0.5) * level_ratio
+            
+            # Grade component (50% of education weight)
+            if highest_qualification.get("grade"):
+                candidate_grade_pct = highest_qualification["grade"]["normalized_percentage"]
+                # Normalize to 0-1 scale (assuming 100% is max)
+                grade_ratio = min(1.0, candidate_grade_pct / 100)
+                edu_score += (w_edu * 0.5) * grade_ratio
+            else:
+                edu_score += (w_edu * 0.5)  # Give half credit if no grade detected
+            
+            score += edu_score
         else:
-            score += w_deg
+            score += w_edu  # Full points if education not required
         
         score = round(score, 2)
-        print(f"📊 Final Score: {score}/{sum([w_all, w_any, w_exp, w_sim, w_deg])}")
+        print(f"📊 Final Score: {score}/100")
     
     # ========================================
     # FINAL DECISION - SCORE-BASED (NOT GATE-BASED)
     # ========================================
     
-    # CRITICAL GATES (must pass these)
-    critical_gates = [check_forbidden]  # Only forbidden keywords are critical
-    
-    # OPTIONAL GATES (can fail some of these)
-    optional_gates = [check_all, check_any, check_experience, check_degree, check_location, check_work_auth, check_similarity]
+    critical_gates = [check_forbidden]
+    optional_gates = [check_all, check_any, check_experience, check_education, check_work_auth, check_similarity]
     
     passed_critical = all(critical_gates)
-    passed_optional = sum(optional_gates)  # Count how many passed
+    passed_optional = sum(optional_gates)
     
-    # NEW LOGIC: Must pass critical gates AND either:
-    # 1. Pass score threshold, OR
-    # 2. Pass at least 4 out of 7 optional gates
     if scoring_enabled and score is not None:
         passed = passed_critical and (score >= score_threshold or passed_optional >= 4)
         
         if not passed_critical:
             reasons_fail.append("Failed critical checks (forbidden keywords)")
         elif score < score_threshold and passed_optional < 4:
-            reasons_fail.append(f"Score too low ({score} < {score_threshold}) and only {passed_optional}/7 checks passed")
+            reasons_fail.append(f"Score too low ({score} < {score_threshold}) and only {passed_optional}/6 checks passed")
         else:
-            reasons_pass.append(f"Score: {score} or {passed_optional}/7 checks passed")
+            reasons_pass.append(f"Score: {score} or {passed_optional}/6 checks passed")
     else:
-        # Fallback to gate-based (at least 5 of 7 optional gates must pass)
-        passed = passed_critical and (passed_optional >= 5)
+        passed = passed_critical and (passed_optional >= 4)
     
     decision = "selected" if passed else "rejected"
     
@@ -673,7 +909,7 @@ def evaluate_resume(
         "file": os.path.basename(resume_path),
         "decision": decision,
         "score": score,
-        "rule_version": rules.get("version", "v2-enhanced"),
+        "rule_version": "v2-enhanced-education",
         "role": rules.get("role"),
         "summary": {
             "passed": passed,
@@ -695,18 +931,7 @@ def evaluate_resume(
             "min_required_years": min_years,
             "meets_requirement": check_experience
         },
-        "education": {
-            "degrees_found": degrees,
-            "highest_degree": highest_degree,
-            "allowed_degrees": allowed_degrees,
-            "min_degree_level": min_degree_level,
-            "meets_requirement": check_degree
-        },
-        "location": {
-            "allowed_locations": allowed_locations,
-            "allow_remote": allow_remote,
-            "meets_requirement": check_location
-        },
+        "education": education_details,
         "work_authorization": {
             "required": require_work_auth,
             "found": has_auth,

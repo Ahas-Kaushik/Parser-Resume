@@ -1,70 +1,213 @@
 """
 Application Configuration
-Loads settings from environment variables
+Handles all environment variables and settings
 """
 
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import Optional, List
 import os
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
-    # Application
-    APP_NAME: str = "AI-Powered Job Portal"
+    # ========================================
+    # APPLICATION SETTINGS
+    # ========================================
+    APP_NAME: str = "Fetch Ya Job"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
     
-    # Security
-    JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_DAYS: int = 7
-    
-    # Database
+    # ========================================
+    # DATABASE SETTINGS
+    # ========================================
     DATABASE_URL: str = "sqlite:///./app.db"
     
-    # File Upload
-    UPLOAD_DIR: str = "./storage"
-    MAX_FILE_SIZE: int = 10485760  # 10MB
-    ALLOWED_EXTENSIONS: str = "pdf,docx,txt"
+    # ========================================
+    # SECURITY SETTINGS (Support both old and new)
+    # ========================================
+    # New naming
+    SECRET_KEY: Optional[str] = None
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     
-    # Email
-    EMAIL_ENABLED: bool = False
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = "noreply@jobportal.com"
-    
-    # CORS
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
-    
-    # Chat
-    CHAT_MESSAGE_LIMIT: int = 100
-    CHAT_HISTORY_DAYS: int = 30
-    
-    # Resume Screening
-    DEFAULT_SIMILARITY_THRESHOLD: float = 0.6
-    DEFAULT_MIN_SCORE: float = 70.0
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # Old naming (for backwards compatibility)
+    JWT_SECRET: Optional[str] = None
+    JWT_ALGORITHM: Optional[str] = None
+    JWT_EXPIRATION_DAYS: Optional[int] = None
     
     @property
-    def allowed_origins_list(self) -> List[str]:
-        """Parse ALLOWED_ORIGINS string into list"""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+    def secret_key(self) -> str:
+        """Get secret key (supports both naming conventions)"""
+        return self.SECRET_KEY or self.JWT_SECRET or "fallback-secret-key"
+    
+    @property
+    def algorithm(self) -> str:
+        """Get algorithm (supports both naming conventions)"""
+        return self.ALGORITHM or self.JWT_ALGORITHM or "HS256"
+    
+    # ========================================
+    # FILE UPLOAD SETTINGS (Support both old and new)
+    # ========================================
+    UPLOAD_DIR: str = "./storage"  # Changed from ./uploads to match your setup
+    MAX_UPLOAD_SIZE: Optional[int] = None
+    MAX_FILE_SIZE: Optional[int] = None
+    ALLOWED_EXTENSIONS: str = "pdf,docx,txt"
+    
+    @property
+    def max_upload_size(self) -> int:
+        """Get max upload size (supports both naming conventions)"""
+        return self.MAX_UPLOAD_SIZE or self.MAX_FILE_SIZE or 10485760
     
     @property
     def allowed_extensions_list(self) -> List[str]:
-        """Parse ALLOWED_EXTENSIONS string into list"""
-        return [ext.strip() for ext in self.ALLOWED_EXTENSIONS.split(",")]
+        """Convert comma-separated extensions to list"""
+        return [ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",")]
+    
+    # ========================================
+    # DOWNLOAD SETTINGS (NEW)
+    # ========================================
+    DOWNLOADS_DIR: str = "./storage/downloads"
+    MAX_BULK_DOWNLOAD: int = 50
+    
+    # ========================================
+    # EMAIL SETTINGS
+    # ========================================
+    EMAIL_ENABLED: bool = False
+    SMTP_ENABLED: bool = False
+    SMTP_HOST: Optional[str] = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_FROM_NAME: str = "Fetch Ya Job"
+    
+    @property
+    def smtp_enabled(self) -> bool:
+        """Check if SMTP is enabled (supports both naming conventions)"""
+        return self.SMTP_ENABLED or self.EMAIL_ENABLED
+    
+    @property
+    def smtp_from_email(self) -> str:
+        """Get from email (supports both naming conventions)"""
+        return self.SMTP_FROM_EMAIL or self.SMTP_FROM or "noreply@fetchyajob.com"
+    
+    # ========================================
+    # CORS SETTINGS
+    # ========================================
+    CORS_ORIGINS: Optional[str] = None
+    ALLOWED_ORIGINS: Optional[str] = None
+    
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Convert comma-separated origins to list (supports both naming)"""
+        origins = self.CORS_ORIGINS or self.ALLOWED_ORIGINS or "http://localhost:5173"
+        return [origin.strip() for origin in origins.split(",")]
+    
+    # ========================================
+    # CHAT SETTINGS
+    # ========================================
+    CHAT_MESSAGE_LIMIT: int = 100
+    CHAT_HISTORY_DAYS: int = 30
+    
+    # ========================================
+    # AI/ML SETTINGS
+    # ========================================
+    AI_SCORING_ENABLED: bool = True
+    DEFAULT_SIMILARITY_THRESHOLD: float = 0.6
+    DEFAULT_MIN_SCORE: float = 70.0
+    DEFAULT_SCORE_THRESHOLD: float = 70.0
+    
+    # Default scoring weights
+    DEFAULT_WEIGHTS: dict = {
+        "skills_all": 25.0,
+        "skills_any": 15.0,
+        "experience": 15.0,
+        "similarity": 20.0,
+        "education": 25.0
+    }
+    
+    # ========================================
+    # REPORT GENERATION SETTINGS (NEW)
+    # ========================================
+    REPORT_LOGO_PATH: Optional[str] = None
+    REPORT_FOOTER_TEXT: str = "Generated by Fetch Ya Job AI System"
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
 
 
 # Create settings instance
 settings = Settings()
 
-# Ensure upload directory exists
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+# ========================================
+# HELPER FUNCTIONS
+# ========================================
+
+def get_upload_path(*paths: str) -> str:
+    """
+    Get full path within upload directory
+    
+    Example:
+        get_upload_path("jobs", "1", "resumes") 
+        -> "./storage/jobs/1/resumes"
+    """
+    return os.path.join(settings.UPLOAD_DIR, *paths)
+
+
+def get_download_path(*paths: str) -> str:
+    """
+    Get full path within download directory
+    
+    Example:
+        get_download_path("reports", "application_123.pdf")
+        -> "./storage/downloads/reports/application_123.pdf"
+    """
+    return os.path.join(settings.DOWNLOADS_DIR, *paths)
+
+
+def ensure_directories_exist():
+    """
+    Create all necessary directories if they don't exist
+    Called on application startup
+    """
+    directories = [
+        settings.UPLOAD_DIR,
+        settings.DOWNLOADS_DIR,
+        os.path.join(settings.UPLOAD_DIR, "jobs"),
+        os.path.join(settings.UPLOAD_DIR, "downloads"),
+        os.path.join(settings.UPLOAD_DIR, "temp"),
+    ]
+    
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        print(f"✓ Directory ensured: {directory}")
+
+
+# ========================================
+# DISPLAY SETTINGS (FOR DEBUGGING)
+# ========================================
+
+def display_settings():
+    """Display current settings (useful for debugging)"""
+    print("\n" + "="*60)
+    print("🔧 APPLICATION SETTINGS")
+    print("="*60)
+    print(f"App Name: {settings.APP_NAME}")
+    print(f"Version: {settings.APP_VERSION}")
+    print(f"Debug Mode: {settings.DEBUG}")
+    print(f"Database: {settings.DATABASE_URL}")
+    print(f"Upload Dir: {settings.UPLOAD_DIR}")
+    print(f"Downloads Dir: {settings.DOWNLOADS_DIR}")
+    print(f"Allowed Extensions: {settings.ALLOWED_EXTENSIONS}")
+    print(f"Max Upload Size: {settings.max_upload_size / (1024*1024):.1f} MB")
+    print(f"SMTP Enabled: {settings.smtp_enabled}")
+    print(f"AI Scoring: {settings.AI_SCORING_ENABLED}")
+    print(f"Default Score Threshold: {settings.DEFAULT_SCORE_THRESHOLD}")
+    print(f"CORS Origins: {', '.join(settings.cors_origins_list)}")
+    print(f"Chat Message Limit: {settings.CHAT_MESSAGE_LIMIT}")
+    print("="*60 + "\n")

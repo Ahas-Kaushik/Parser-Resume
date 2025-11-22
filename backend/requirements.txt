@@ -35,3 +35,9 @@ pydantic-settings==2.1.0
 
 # Additional utilities
 python-dateutil==2.8.2
+
+# NEW: For PDF generation
+reportlab>=3.6.0
+
+# NEW: For better date handling
+python-dateutil>=2.8.0

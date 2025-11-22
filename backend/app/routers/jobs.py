@@ -3,12 +3,18 @@ Jobs & Applications Router
 Handles job postings, applications, and resume screening
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pathlib import Path
 import os
 import shutil
+import json
+import csv
+from io import StringIO
 from datetime import datetime
+from zipfile import ZipFile
 
 from app.database import get_db
 from app.models.user import User
@@ -18,10 +24,18 @@ from app.schemas.job import JobCreate, JobUpdate, JobResponse, JobStats, JobRule
 from app.schemas.application import ApplicationResponse, ApplicationListResponse
 from app.dependencies import get_current_user, get_current_employer, get_current_candidate
 from app.utils.resume_parser import evaluate_resume
+from app.utils.report_generator import AIScreeningReportGenerator, create_download_package
 from app.utils.email_utils import send_application_confirmation, send_application_result, send_new_application_notification
 from app.config import settings
 
 router = APIRouter()
+
+
+# ========================================
+# JOB ENDPOINTS
+# ========================================
+
+# ... [Rest of your code stays exactly the same] ...
 
 
 # ========================================
@@ -404,3 +418,422 @@ async def get_job_stats(
         "avg_score": avg_score,
         "top_skills": []
     }
+
+@router.get("/{job_id}/applications/{application_id}/download")
+async def download_application_files(
+    job_id: int,
+    application_id: int,
+    file_type: str = Query("package", regex="^(resume|report|json|package)$"),
+    current_user: User = Depends(get_current_employer),
+    db: Session = Depends(get_db)
+):
+    """
+    Download application files (employer only)
+    
+    Args:
+        job_id: Job ID
+        application_id: Application ID
+        file_type: Type of file to download
+            - resume: Original resume only
+            - report: AI screening report (PDF)
+            - json: Explanation JSON only
+            - package: Complete ZIP package (resume + report + json)
+    
+    Returns:
+        File download
+    """
+    
+    # Verify job belongs to employer
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.employer_id == current_user.id
+    ).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or you don't have permission"
+        )
+    
+    # Get application
+    application = db.query(Application).filter(
+        Application.id == application_id,
+        Application.job_id == job_id
+    ).first()
+    
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    
+    # Get resume path
+    resume_path = application.resume_path
+    if not os.path.exists(resume_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume file not found"
+        )
+    
+    # Prepare application data
+    application_data = {
+        "id": application.id,
+        "name": application.name,
+        "phone": application.phone,
+        "current_company": application.current_company,
+        "current_position": application.current_position,
+        "current_salary": application.current_salary,
+        "status": application.status,
+        "score": application.score,
+        "explanation": application.explanation,
+        "created_at": application.created_at.isoformat() if application.created_at else None
+    }
+    
+    job_data = {
+        "id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "description": job.description
+    }
+    
+    # Handle different file types
+    if file_type == "resume":
+        # Return original resume
+        resume_filename = os.path.basename(resume_path)
+        return FileResponse(
+            path=resume_path,
+            filename=f"{application.name.replace(' ', '_')}_resume{Path(resume_path).suffix}",
+            media_type="application/octet-stream"
+        )
+    
+    elif file_type == "report":
+        # Generate and return PDF report
+        try:
+            download_dir = os.path.join(settings.UPLOAD_DIR, "downloads")
+            os.makedirs(download_dir, exist_ok=True)
+            
+            report_generator = AIScreeningReportGenerator()
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f"{application.name.replace(' ', '_')}_AI_Report_{timestamp}.pdf"
+            report_path = os.path.join(download_dir, report_filename)
+            
+            report_generator.generate_report(application_data, job_data, report_path)
+            
+            return FileResponse(
+                path=report_path,
+                filename=report_filename,
+                media_type="application/pdf"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate report: {str(e)}"
+            )
+    
+    elif file_type == "json":
+        # Return explanation JSON
+        import json
+        
+        json_data = {
+            "candidate": {
+                "name": application.name,
+                "phone": application.phone,
+                "current_company": application.current_company,
+                "current_position": application.current_position,
+            },
+            "job": {
+                "title": job.title,
+                "company": job.company,
+            },
+            "screening_result": {
+                "decision": application.status,
+                "score": application.score,
+                "explanation": application.explanation
+            },
+            "metadata": {
+                "applied_at": application.created_at.isoformat() if application.created_at else None,
+                "exported_at": datetime.now().isoformat()
+            }
+        }
+        
+        json_str = json.dumps(json_data, indent=2)
+        
+        return StreamingResponse(
+            iter([json_str]),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename={application.name.replace(' ', '_')}_explanation.json"
+            }
+        )
+    
+    elif file_type == "package":
+        # Create and return complete ZIP package
+        try:
+            download_dir = os.path.join(settings.UPLOAD_DIR, "downloads")
+            os.makedirs(download_dir, exist_ok=True)
+            
+            zip_path = create_download_package(
+                application_data,
+                job_data,
+                resume_path,
+                download_dir
+            )
+            
+            zip_filename = os.path.basename(zip_path)
+            
+            return FileResponse(
+                path=zip_path,
+                filename=zip_filename,
+                media_type="application/zip"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create package: {str(e)}"
+            )
+    
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file_type parameter"
+        )
+
+
+@router.get("/{job_id}/applications/bulk-download")
+async def bulk_download_applications(
+    job_id: int,
+    application_ids: List[int] = Query(...),
+    current_user: User = Depends(get_current_employer),
+    db: Session = Depends(get_db)
+):
+    """
+    Download multiple applications as a single ZIP (employer only)
+    
+    Args:
+        job_id: Job ID
+        application_ids: List of application IDs to download
+    
+    Returns:
+        ZIP file with all application packages
+    """
+    
+    # Verify job belongs to employer
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.employer_id == current_user.id
+    ).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or you don't have permission"
+        )
+    
+    if not application_ids or len(application_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No application IDs provided"
+        )
+    
+    if len(application_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot download more than 50 applications at once"
+        )
+    
+    # Get applications
+    applications = db.query(Application).filter(
+        Application.id.in_(application_ids),
+        Application.job_id == job_id
+    ).all()
+    
+    if len(applications) != len(application_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Some application IDs not found"
+        )
+    
+    try:
+        from zipfile import ZipFile
+        import tempfile
+        
+        download_dir = os.path.join(settings.UPLOAD_DIR, "downloads")
+        os.makedirs(download_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        bulk_zip_path = os.path.join(
+            download_dir,
+            f"{job.title.replace(' ', '_')}_Applications_{timestamp}.zip"
+        )
+        
+        with ZipFile(bulk_zip_path, 'w') as bulk_zip:
+            for application in applications:
+                # Prepare data
+                application_data = {
+                    "id": application.id,
+                    "name": application.name,
+                    "phone": application.phone,
+                    "current_company": application.current_company,
+                    "current_position": application.current_position,
+                    "current_salary": application.current_salary,
+                    "status": application.status,
+                    "score": application.score,
+                    "explanation": application.explanation,
+                    "created_at": application.created_at.isoformat() if application.created_at else None
+                }
+                
+                job_data = {
+                    "id": job.id,
+                    "title": job.title,
+                    "company": job.company,
+                    "description": job.description
+                }
+                
+                # Create individual package
+                individual_zip = create_download_package(
+                    application_data,
+                    job_data,
+                    application.resume_path,
+                    download_dir
+                )
+                
+                # Add to bulk zip with folder structure
+                folder_name = f"{application.name.replace(' ', '_')}_ID{application.id}"
+                bulk_zip.write(
+                    individual_zip,
+                    f"{folder_name}/{os.path.basename(individual_zip)}"
+                )
+                
+                # Clean up individual zip
+                if os.path.exists(individual_zip):
+                    os.remove(individual_zip)
+        
+        return FileResponse(
+            path=bulk_zip_path,
+            filename=os.path.basename(bulk_zip_path),
+            media_type="application/zip"
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create bulk download: {str(e)}"
+        )
+
+
+@router.get("/{job_id}/applications/export-csv")
+async def export_applications_csv(
+    job_id: int,
+    current_user: User = Depends(get_current_employer),
+    db: Session = Depends(get_db)
+):
+    """
+    Export applications as CSV for comparison (employer only)
+    
+    Args:
+        job_id: Job ID
+    
+    Returns:
+        CSV file with all application data
+    """
+    
+    # Verify job belongs to employer
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.employer_id == current_user.id
+    ).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or you don't have permission"
+        )
+    
+    # Get all applications
+    applications = db.query(Application).filter(
+        Application.job_id == job_id
+    ).order_by(Application.score.desc().nullslast()).all()
+    
+    if not applications:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No applications found"
+        )
+    
+    try:
+        import csv
+        from io import StringIO
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'ID',
+            'Name',
+            'Phone',
+            'Current Company',
+            'Current Position',
+            'Score',
+            'Status',
+            'Skills Matched',
+            'Experience (Years)',
+            'Highest Education',
+            'Education Grade',
+            'Applied Date'
+        ])
+        
+        # Write data rows
+        for app in applications:
+            explanation = app.explanation or {}
+            skills = explanation.get('skills', {})
+            experience = explanation.get('experience', {})
+            education = explanation.get('education', {})
+            
+            matched_skills = len(skills.get('matched_required_all', [])) + len(skills.get('matched_required_any', []))
+            exp_years = experience.get('estimated_years', 0)
+            highest_edu = education.get('candidate_highest', 'N/A')
+            
+            # Get grade info
+            all_quals = education.get('all_qualifications', [])
+            grade_display = 'N/A'
+            if all_quals:
+                for qual in all_quals:
+                    if qual.get('grade'):
+                        grade = qual['grade']
+                        grade_display = f"{grade.get('normalized_percentage', 0)}%"
+                        break
+            
+            writer.writerow([
+                app.id,
+                app.name,
+                app.phone,
+                app.current_company or 'N/A',
+                app.current_position or 'N/A',
+                f"{app.score:.1f}" if app.score else 'N/A',
+                app.status,
+                matched_skills,
+                exp_years,
+                highest_edu,
+                grade_display,
+                app.created_at.strftime('%Y-%m-%d') if app.created_at else 'N/A'
+            ])
+        
+        output.seek(0)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{job.title.replace(' ', '_')}_Applications_{timestamp}.csv"
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export CSV: {str(e)}"
+        )
