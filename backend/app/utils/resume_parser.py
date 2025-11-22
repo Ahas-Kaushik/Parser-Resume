@@ -659,6 +659,7 @@ def evaluate_resume(
     
     # 3. Required ANY skills
     matched_any = [s for s in required_any if s in candidate_skills]
+    missing_any = [s for s in required_any if s not in candidate_skills]
     check_any = True
     
     if required_any:
@@ -811,7 +812,7 @@ def evaluate_resume(
     print(f"✅ Checks Passed: {len(reasons_pass)}")
     print(f"❌ Checks Failed: {len(reasons_fail)}")
     
-    # ========================================
+        # ========================================
     # SCORING - ENHANCED WITH PARTIAL CREDIT
     # ========================================
     
@@ -855,6 +856,7 @@ def evaluate_resume(
             
             # Level component (50% of education weight)
             if min_level_required:
+                required_level_order = DEGREE_ORDER.get(min_level_required if min_level_required != "12th_diploma" else "12th", 0)
                 level_ratio = min(1.0, candidate_level_order / max(required_level_order, 1))
                 edu_score += (w_edu * 0.5) * level_ratio
             
@@ -871,7 +873,8 @@ def evaluate_resume(
         else:
             score += w_edu  # Full points if education not required
         
-        score = round(score, 2)
+        # FIXED: Cap score at 100
+        score = min(100.0, round(score, 2))
         print(f"📊 Final Score: {score}/100")
     
     # ========================================

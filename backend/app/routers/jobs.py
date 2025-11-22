@@ -35,13 +35,6 @@ router = APIRouter()
 # JOB ENDPOINTS
 # ========================================
 
-# ... [Rest of your code stays exactly the same] ...
-
-
-# ========================================
-# JOB ENDPOINTS
-# ========================================
-
 @router.get("/", response_model=List[JobResponse])
 async def get_jobs(
     skip: int = 0,
@@ -257,15 +250,87 @@ async def apply_to_job(
             job_description=job.description or ""
         )
         
-        application_status = ApplicationStatus.SELECTED if evaluation.get("decision") == "selected" else ApplicationStatus.REJECTED
-        score = evaluation.get("score")
+        # Check for evaluation errors within the response
+        if "error" in evaluation:
+            raise Exception(evaluation.get("error", "Unknown evaluation error"))
+        
+        # Determine status based on evaluation decision
+        decision = evaluation.get("decision", "rejected")
+        application_status = ApplicationStatus.SELECTED if decision == "selected" else ApplicationStatus.REJECTED
+        score = evaluation.get("score", 0.0)
         explanation = evaluation
         
+        # If rejected with 0 score, enhance the explanation
+        if application_status == ApplicationStatus.REJECTED and score == 0.0:
+            summary = explanation.get("summary", {})
+            reasons_fail = summary.get("reasons_fail", [])
+            
+            # If no specific reasons, add generic ones
+            if not reasons_fail or len(reasons_fail) == 0:
+                if "summary" not in explanation:
+                    explanation["summary"] = {}
+                
+                explanation["summary"]["reasons_fail"] = [
+                    "Resume does not meet minimum job requirements",
+                    "No matching skills found for required qualifications",
+                    "Overall compatibility score below threshold"
+                ]
+                
+                # Add more context if available
+                skills = explanation.get("skills", {})
+                missing_all = skills.get("missing_required_all", [])
+                if missing_all:
+                    explanation["summary"]["reasons_fail"].insert(0, 
+                        f"Missing required skills: {', '.join(missing_all[:5])}"
+                    )
+        
     except Exception as e:
-        # If evaluation fails, mark as pending
-        application_status = ApplicationStatus.PENDING
-        score = None
-        explanation = {"error": str(e), "note": "Manual review required"}
+        # CHANGED: Reject instead of pending on error
+        print(f"❌ Resume evaluation exception: {str(e)}")
+        application_status = ApplicationStatus.REJECTED
+        score = 0.0
+        
+        # Create detailed error explanation WITHOUT generic error messages
+        error_message = str(e)
+        
+        # Build specific error reasons based on the actual error
+        specific_reasons = []
+        
+        if "missing_any" in error_message.lower():
+            specific_reasons.append("Resume processing encountered a technical issue")
+        elif "could not extract" in error_message.lower():
+            specific_reasons.append("Unable to extract information from resume file")
+        else:
+            # Show only the actual error, not generic messages
+            specific_reasons.append(f"Error: {error_message[:200]}")
+        
+        explanation = {
+            "decision": "rejected",
+            "score": 0.0,
+            "rule_version": "v2-enhanced",
+            "summary": {
+                "passed": False,
+                "reasons_fail": specific_reasons,  # Only actual error, no generic messages
+                "reasons_pass": []
+            },
+            "skills": {
+                "candidate_skills": [],
+                "matched_required_all": [],
+                "missing_required_all": job_rules.get("required_all", []),
+                "matched_required_any": [],
+                "similarity": 0.0
+            },
+            "experience": {
+                "estimated_years": 0,
+                "min_required_years": job_rules.get("min_years", 0),
+                "meets_requirement": False
+            },
+            "education": {
+                "enabled": job_rules.get("education_requirements", {}).get("enabled", False)
+            },
+            "technical_error": True,
+            "error_message": error_message
+        }
     
     # Create application record
     new_application = Application(
