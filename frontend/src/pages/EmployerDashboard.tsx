@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Briefcase, TrendingUp, FileText, Users, Plus, Eye } from 'lucide-react';
+import { Briefcase, TrendingUp, FileText, Users, Plus, Eye, PieChart } from 'lucide-react';
 import { GlassLayout } from '../components/layout/GlassLayout';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassButton } from '../components/ui/GlassButton';
@@ -10,6 +10,7 @@ import { useAuthStore } from '../store/authStore';
 import { useToast } from '../hooks/useToast';
 import api from '../lib/api';
 import type { Job } from '../types';
+import { ScorePieChart } from '../components/analytics/ScorePieChart'; // ADD THIS IMPORT
 
 export default function EmployerDashboard() {
   const navigate = useNavigate();
@@ -25,6 +26,11 @@ export default function EmployerDashboard() {
     totalApplications: 0,
     selectedCandidates: 0,
   });
+
+  // ADD THESE NEW STATE VARIABLES (around line 28)
+  const [analyticsData, setAnalyticsData] = useState<Record<number, any>>({});
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     fetchJobs();
@@ -55,7 +61,7 @@ export default function EmployerDashboard() {
           const selected = appsRes.data.filter((app: any) => app.status === 'selected').length;
           selectedCandidates += selected;
         } catch (error) {
-          console.error(`Failed to fetch applications for job ${job.id}`);
+          console.error(`Failed to fetch applications for job ${job. id}`);
           counts[job.id] = 0;
         }
       }
@@ -68,6 +74,32 @@ export default function EmployerDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ADD THIS NEW FUNCTION (after fetchJobs, around line 75)
+  const fetchAnalytics = async (jobId: number) => {
+    if (analyticsData[jobId]) {
+      // Already loaded, just toggle visibility
+      setExpandedJobId(expandedJobId === jobId ? null : jobId);
+      return;
+    }
+
+    setLoadingAnalytics(prev => ({ ...prev, [jobId]: true }));
+    try {
+      const response = await api.get(`/jobs/${jobId}/analytics`);
+      setAnalyticsData(prev => ({ ...prev, [jobId]: response.data }));
+      setExpandedJobId(jobId);
+    } catch (error) {
+      console. error('Error fetching analytics:', error);
+      toast.error('Failed to load analytics');
+    } finally {
+      setLoadingAnalytics(prev => ({ ...prev, [jobId]: false }));
+    }
+  };
+
+  // ADD THIS HANDLER FUNCTION (after fetchAnalytics)
+  const handleViewApplication = (jobId: number, applicationId: number) => {
+    navigate(`/jobs/${jobId}? application=${applicationId}`);
   };
 
   const formatDate = (dateString: string) => {
@@ -183,7 +215,7 @@ export default function EmployerDashboard() {
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
                         <h3 className="text-xl font-bold text-white">{job.title}</h3>
-                        {!job.is_active && (
+                        {! job.is_active && (
                           <span className="px-2 py-1 bg-red-500/20 border border-red-500/50 rounded text-red-300 text-xs">
                             Closed
                           </span>
@@ -212,23 +244,47 @@ export default function EmployerDashboard() {
                     </GlassButton>
 
                     {applicationCounts[job.id] > 0 && (
-                      <GlassButton
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/jobs/${job.id}`);
-                          // Scroll to applications after navigation
-                          setTimeout(() => {
-                            const applicationsSection = document.getElementById('applications-section');
-                            applicationsSection?.scrollIntoView({ behavior: 'smooth' });
-                          }, 100);
-                        }}
-                      >
-                        <FileText className="w-4 h-4 mr-2" />
-                        View {applicationCounts[job.id]} {applicationCounts[job.id] === 1 ? 'Application' : 'Applications'}
-                      </GlassButton>
+                      <>
+                        <GlassButton
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/jobs/${job.id}`);
+                            // Scroll to applications after navigation
+                            setTimeout(() => {
+                              const applicationsSection = document.getElementById('applications-section');
+                              applicationsSection?.scrollIntoView({ behavior: 'smooth' });
+                            }, 100);
+                          }}
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          View {applicationCounts[job.id]} {applicationCounts[job.id] === 1 ? 'Application' : 'Applications'}
+                        </GlassButton>
+
+                        {/* ADD THIS NEW ANALYTICS BUTTON */}
+                        <GlassButton
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => fetchAnalytics(job.id)}
+                          loading={loadingAnalytics[job.id]}
+                        >
+                          <PieChart className="w-4 h-4 mr-2" />
+                          {expandedJobId === job.id ?  'Hide Analytics' : 'View Analytics'}
+                        </GlassButton>
+                      </>
                     )}
                   </div>
+
+                  {/* ADD THIS ANALYTICS SECTION - Shows when expanded */}
+                  {expandedJobId === job.id && analyticsData[job.id] && (
+                    <div className="mt-6 pt-6 border-t border-white/20">
+                      <ScorePieChart
+                        data={analyticsData[job.id].score_distribution}
+                        jobTitle={job.title}
+                        onViewApplication={(appId) => handleViewApplication(job.id, appId)}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

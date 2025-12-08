@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LogOut, User, Briefcase, MessageCircle, Home } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 export default function Navbar() {
   const navigate = useNavigate();
@@ -63,7 +64,8 @@ export default function Navbar() {
                   <User className="w-4 h-4 text-white" />
                   <span className="text-white font-medium">Dashboard</span>
                 </Link>
-
+                {/* Theme Toggle - ADD HERE (before Logout) */}
+                <ThemeToggle />
                 <button
                   onClick={handleLogout}
                   className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-xl transition-all border border-red-500/50"

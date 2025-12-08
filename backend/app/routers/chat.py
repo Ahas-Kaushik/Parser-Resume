@@ -14,6 +14,7 @@ from app.models.chat import ChatMessage
 from app.schemas.chat import ChatMessageCreate, ChatMessageResponse
 from app.dependencies import get_current_user
 from app.config import settings
+from sqlalchemy import or_
 
 router = APIRouter()
 
@@ -182,3 +183,89 @@ async def get_chat_users(
         }
         for user in users
     ]
+# Add these imports and endpoints to your existing chat. py
+
+from sqlalchemy import or_
+
+@router.get("/users/search", response_model=List[dict])
+async def search_users(
+    query: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Search users by name or email for DM
+    """
+    if len(query) < 2:
+        return []
+    
+    users = db.query(User).filter(
+        User.id != current_user.id,
+        or_(
+            User.name.ilike(f"%{query}%"),
+            User.email.ilike(f"%{query}%")
+        )
+    ).limit(10).all()
+    
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role
+        }
+        for user in users
+    ]
+
+
+@router.get("/conversations", response_model=List[dict])
+async def get_conversations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of DM conversations for current user
+    """
+    # Get distinct users the current user has chatted with
+    from sqlalchemy import distinct, union_all
+    
+    sent_to = db.query(ChatMessage.receiver_id. label('user_id')).filter(
+        ChatMessage.sender_id == current_user.id,
+        ChatMessage.is_global == False,
+        ChatMessage.receiver_id != None
+    )
+    
+    received_from = db.query(ChatMessage.sender_id.label('user_id')).filter(
+        ChatMessage.receiver_id == current_user.id,
+        ChatMessage. is_global == False
+    )
+    
+    conversation_user_ids = set()
+    for msg in sent_to. all():
+        conversation_user_ids.add(msg.user_id)
+    for msg in received_from.all():
+        conversation_user_ids. add(msg.user_id)
+    
+    conversations = []
+    for user_id in conversation_user_ids:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            # Get last message
+            last_message = db.query(ChatMessage).filter(
+                ChatMessage.is_global == False,
+                or_(
+                    (ChatMessage.sender_id == current_user.id) & (ChatMessage.receiver_id == user_id),
+                    (ChatMessage.sender_id == user_id) & (ChatMessage.receiver_id == current_user.id)
+                )
+            ).order_by(ChatMessage.created_at.desc()).first()
+            
+            conversations.append({
+                "user_id": user.id,
+                "user_name": user.name,
+                "last_message": last_message.message[:50] if last_message else None,
+                "last_message_at": last_message.created_at if last_message else None
+            })
+    
+    # Sort by last message time
+    conversations.sort(key=lambda x: x['last_message_at'] or datetime.min, reverse=True)
+    return conversations

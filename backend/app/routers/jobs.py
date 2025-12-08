@@ -902,3 +902,187 @@ async def export_applications_csv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export CSV: {str(e)}"
         )
+# Add this endpoint to your existing jobs. py
+
+@router.get("/{job_id}/analytics", response_model=dict)
+async def get_job_analytics(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get analytics for a specific job (employer only)
+    Returns score distribution for pie chart
+    """
+    # Verify job belongs to employer
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or you don't have permission"
+        )
+    
+    applications = db.query(Application).filter(Application.job_id == job_id).all()
+    
+    # Calculate score distribution
+    score_bands = {
+        "excellent": {"min": 80, "max": 100, "count": 0, "applications": []},
+        "good": {"min": 60, "max": 79, "count": 0, "applications": []},
+        "needs_review": {"min": 40, "max": 59, "count": 0, "applications": []},
+        "below_threshold": {"min": 0, "max": 39, "count": 0, "applications": []},
+    }
+    
+    for app in applications:
+        score = app.score or 0
+        app_data = {
+            "id": app.id,
+            "name": app.name or "Unknown",
+            "score": float(score) if score else 0.0,
+            "status": status_value,
+            "phone": app.phone or "",
+            "current_company": app.current_company or "",
+            "current_position": app.current_position or ""
+        }
+        
+        if score >= 80:
+            score_bands["excellent"]["count"] += 1
+            score_bands["excellent"]["applications"]. append(app_data)
+        elif score >= 60:
+            score_bands["good"]["count"] += 1
+            score_bands["good"]["applications"].append(app_data)
+        elif score >= 40:
+            score_bands["needs_review"]["count"] += 1
+            score_bands["needs_review"]["applications"].append(app_data)
+        else:
+            score_bands["below_threshold"]["count"] += 1
+            score_bands["below_threshold"]["applications"].append(app_data)
+    
+    return {
+        "job_id": job_id,
+        "job_title": job.title,
+        "total_applications": len(applications),
+        "score_distribution": [
+            {
+                "name": "Excellent (80-100)",
+                "value": score_bands["excellent"]["count"],
+                "color": "#22c55e",
+                "band": "excellent",
+                "applications": score_bands["excellent"]["applications"]
+            },
+            {
+                "name": "Good (60-79)",
+                "value": score_bands["good"]["count"],
+                "color": "#f59e0b",
+                "band": "good",
+                "applications": score_bands["good"]["applications"]
+            },
+            {
+                "name": "Needs Review (40-59)",
+                "value": score_bands["needs_review"]["count"],
+                "color": "#f97316",
+                "band": "needs_review",
+                "applications": score_bands["needs_review"]["applications"]
+            },
+            {
+                "name": "Below Threshold (0-39)",
+                "value": score_bands["below_threshold"]["count"],
+                "color": "#ef4444",
+                "band": "below_threshold",
+                "applications": score_bands["below_threshold"]["applications"]
+            }
+        ]
+    }
+
+@router.get("/{job_id}/analytics", response_model=dict)
+async def get_job_analytics(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get analytics for a specific job (employer only)"""
+    
+    # Verify job belongs to employer
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id). first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or you don't have permission"
+        )
+    
+    applications = db.query(Application).filter(Application.job_id == job_id).all()
+    
+    # Calculate score distribution
+    score_bands = {
+        "excellent": {"count": 0, "applications": []},
+        "good": {"count": 0, "applications": []},
+        "needs_review": {"count": 0, "applications": []},
+        "below_threshold": {"count": 0, "applications": []},
+    }
+    
+    for application in applications:
+        score = application. score or 0
+        
+        # Handle status safely
+        try:
+            status_value = application.status.value if hasattr(application.status, 'value') else str(application.status) if application.status else "pending"
+        except:
+            status_value = "pending"
+        
+        app_data = {
+            "id": application.id,
+            "name": application.name or "Unknown",
+            "score": float(score) if score else 0.0,
+            "status": status_value,
+            "phone": application.phone or "",
+            "current_company": application.current_company or "",
+            "current_position": application.current_position or ""
+        }
+        
+        if score >= 80:
+            score_bands["excellent"]["count"] += 1
+            score_bands["excellent"]["applications"]. append(app_data)
+        elif score >= 60:
+            score_bands["good"]["count"] += 1
+            score_bands["good"]["applications"].append(app_data)
+        elif score >= 40:
+            score_bands["needs_review"]["count"] += 1
+            score_bands["needs_review"]["applications"].append(app_data)
+        else:
+            score_bands["below_threshold"]["count"] += 1
+            score_bands["below_threshold"]["applications"].append(app_data)
+    
+    return {
+        "job_id": job_id,
+        "job_title": job.title,
+        "total_applications": len(applications),
+        "score_distribution": [
+            {
+                "name": "Excellent (80-100)",
+                "value": score_bands["excellent"]["count"],
+                "color": "#22c55e",
+                "band": "excellent",
+                "applications": score_bands["excellent"]["applications"]
+            },
+            {
+                "name": "Good (60-79)",
+                "value": score_bands["good"]["count"],
+                "color": "#f59e0b",
+                "band": "good",
+                "applications": score_bands["good"]["applications"]
+            },
+            {
+                "name": "Needs Review (40-59)",
+                "value": score_bands["needs_review"]["count"],
+                "color": "#f97316",
+                "band": "needs_review",
+                "applications": score_bands["needs_review"]["applications"]
+            },
+            {
+                "name": "Below Threshold (0-39)",
+                "value": score_bands["below_threshold"]["count"],
+                "color": "#ef4444",
+                "band": "below_threshold",
+                "applications": score_bands["below_threshold"]["applications"]
+            }
+        ]
+    }
