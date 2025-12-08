@@ -29,7 +29,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
     document.body.style.backgroundColor = 'var(--color-bg)';
   }, [theme]);
-
+  
   const value = useMemo(() => ({
     theme,
     setTheme: (t: ThemeKey) => setThemeState(t),

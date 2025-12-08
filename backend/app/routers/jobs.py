@@ -5,7 +5,7 @@ Handles job postings, applications, and resume screening
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy. orm import Session
 from typing import List, Optional
 from pathlib import Path
 import os
@@ -18,7 +18,7 @@ from zipfile import ZipFile
 
 from app.database import get_db
 from app.models.user import User
-from app.models.job import Job
+from app.models. job import Job
 from app.models.application import Application, ApplicationStatus
 from app.schemas.job import JobCreate, JobUpdate, JobResponse, JobStats, JobRules
 from app.schemas.application import ApplicationResponse, ApplicationListResponse
@@ -62,10 +62,10 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
     """
     Get single job by ID (public endpoint)
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = db.query(Job). filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status. HTTP_404_NOT_FOUND,
             detail="Job not found"
         )
     return job
@@ -84,13 +84,13 @@ async def create_job(
     - **company**: Company name
     - **description**: Job description
     - **location**: Job location
-    - **salary_range**: Salary range (e.g., "$80k-$100k")
+    - **salary_range**: Salary range (e. g., "$80k-$100k")
     - **employment_type**: Type of employment (full-time, part-time, etc.)
     - **rules**: AI screening rules (optional)
     """
     
     # Convert rules to dict if provided
-    rules_dict = job_data.rules.dict() if job_data.rules else None
+    rules_dict = job_data.rules. dict() if job_data.rules else None
     
     new_job = Job(
         title=job_data.title,
@@ -120,7 +120,7 @@ async def update_job(
     """
     Update a job posting (employer only, own jobs only)
     """
-    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id). first()
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -187,7 +187,7 @@ async def apply_to_job(
     current_company: Optional[str] = Form(None),
     current_position: Optional[str] = Form(None),
     current_salary: Optional[float] = Form(None),
-    resume: UploadFile = File(...),
+    resume: UploadFile = File(... ),
     current_user: User = Depends(get_current_candidate),
     db: Session = Depends(get_db)
 ):
@@ -211,7 +211,7 @@ async def apply_to_job(
         )
     
     # Check if already applied
-    existing_application = db.query(Application).filter(
+    existing_application = db.query(Application). filter(
         Application.job_id == job_id,
         Application.candidate_id == current_user.id
     ).first()
@@ -222,15 +222,15 @@ async def apply_to_job(
         )
     
     # Validate file extension
-    file_extension = os.path.splitext(resume.filename)[1].lower().replace(".", "")
+    file_extension = os.path.splitext(resume.filename)[1]. lower(). replace(".", "")
     if file_extension not in settings.allowed_extensions_list:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type not allowed. Allowed types: {settings.ALLOWED_EXTENSIONS}"
+            detail=f"File type not allowed. Allowed types: {settings. ALLOWED_EXTENSIONS}"
         )
     
     # Create storage directory for this job
-    job_storage_dir = os.path.join(settings.UPLOAD_DIR, "jobs", str(job_id), "uploads")
+    job_storage_dir = os.path.join(settings. UPLOAD_DIR, "jobs", str(job_id), "uploads")
     os.makedirs(job_storage_dir, exist_ok=True)
     
     # Save resume file
@@ -252,7 +252,7 @@ async def apply_to_job(
         
         # Check for evaluation errors within the response
         if "error" in evaluation:
-            raise Exception(evaluation.get("error", "Unknown evaluation error"))
+            raise Exception(evaluation. get("error", "Unknown evaluation error"))
         
         # Determine status based on evaluation decision
         decision = evaluation.get("decision", "rejected")
@@ -281,7 +281,7 @@ async def apply_to_job(
                 missing_all = skills.get("missing_required_all", [])
                 if missing_all:
                     explanation["summary"]["reasons_fail"].insert(0, 
-                        f"Missing required skills: {', '.join(missing_all[:5])}"
+                        f"Missing required skills: {', '. join(missing_all[:5])}"
                     )
         
     except Exception as e:
@@ -296,8 +296,8 @@ async def apply_to_job(
         # Build specific error reasons based on the actual error
         specific_reasons = []
         
-        if "missing_any" in error_message.lower():
-            specific_reasons.append("Resume processing encountered a technical issue")
+        if "missing_any" in error_message. lower():
+            specific_reasons. append("Resume processing encountered a technical issue")
         elif "could not extract" in error_message.lower():
             specific_reasons.append("Unable to extract information from resume file")
         else:
@@ -367,7 +367,7 @@ async def apply_to_job(
             candidate_name=current_user.name,
             job_title=job.title,
             company=job.company,
-            status=application_status.value,
+            status=application_status. value,
             score=score
         )
         
@@ -402,7 +402,7 @@ async def get_job_applications(
     """
     
     # Verify job belongs to employer
-    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id). first()
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -411,9 +411,9 @@ async def get_job_applications(
     
     query = db.query(Application).filter(Application.job_id == job_id)
     if status:
-        query = query.filter(Application.status == status)
+        query = query. filter(Application.status == status)
     
-    applications = query.order_by(Application.score.desc().nullslast()).all()
+    applications = query. order_by(Application.score.desc(). nullslast()).all()
     return applications
 
 
@@ -425,9 +425,9 @@ async def get_my_applications(
     """
     Get all applications submitted by current candidate
     """
-    applications = db.query(Application).filter(
+    applications = db.query(Application). filter(
         Application.candidate_id == current_user.id
-    ).order_by(Application.created_at.desc()).all()
+    ).order_by(Application. created_at.desc()).all()
     
     # Transform to include job details
     result = []
@@ -457,7 +457,7 @@ async def get_job_stats(
     """
     
     # Verify job belongs to employer
-    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id). first()
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -469,7 +469,7 @@ async def get_job_stats(
     total = len(applications)
     selected = len([a for a in applications if a.status == ApplicationStatus.SELECTED])
     rejected = len([a for a in applications if a.status == ApplicationStatus.REJECTED])
-    pending = len([a for a in applications if a.status == ApplicationStatus.PENDING])
+    pending = len([a for a in applications if a.status == ApplicationStatus. PENDING])
     
     scores = [a.score for a in applications if a.score is not None]
     avg_score = sum(scores) / len(scores) if scores else None
@@ -512,7 +512,7 @@ async def download_application_files(
     job = db.query(Job).filter(
         Job.id == job_id,
         Job.employer_id == current_user.id
-    ).first()
+    ). first()
     
     if not job:
         raise HTTPException(
@@ -551,11 +551,11 @@ async def download_application_files(
         "status": application.status,
         "score": application.score,
         "explanation": application.explanation,
-        "created_at": application.created_at.isoformat() if application.created_at else None
+        "created_at": application. created_at. isoformat() if application.created_at else None
     }
     
     job_data = {
-        "id": job.id,
+        "id": job. id,
         "title": job.title,
         "company": job.company,
         "description": job.description
@@ -567,7 +567,7 @@ async def download_application_files(
         resume_filename = os.path.basename(resume_path)
         return FileResponse(
             path=resume_path,
-            filename=f"{application.name.replace(' ', '_')}_resume{Path(resume_path).suffix}",
+            filename=f"{application.name. replace(' ', '_')}_resume{Path(resume_path).suffix}",
             media_type="application/octet-stream"
         )
     
@@ -601,7 +601,7 @@ async def download_application_files(
         
         json_data = {
             "candidate": {
-                "name": application.name,
+                "name": application. name,
                 "phone": application.phone,
                 "current_company": application.current_company,
                 "current_position": application.current_position,
@@ -664,7 +664,7 @@ async def download_application_files(
         )
 
 
-@router.get("/{job_id}/applications/bulk-download")
+@router. get("/{job_id}/applications/bulk-download")
 async def bulk_download_applications(
     job_id: int,
     application_ids: List[int] = Query(...),
@@ -683,9 +683,9 @@ async def bulk_download_applications(
     """
     
     # Verify job belongs to employer
-    job = db.query(Job).filter(
+    job = db.query(Job). filter(
         Job.id == job_id,
-        Job.employer_id == current_user.id
+        Job. employer_id == current_user. id
     ).first()
     
     if not job:
@@ -696,7 +696,7 @@ async def bulk_download_applications(
     
     if not application_ids or len(application_ids) == 0:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status. HTTP_400_BAD_REQUEST,
             detail="No application IDs provided"
         )
     
@@ -708,7 +708,7 @@ async def bulk_download_applications(
     
     # Get applications
     applications = db.query(Application).filter(
-        Application.id.in_(application_ids),
+        Application. id.in_(application_ids),
         Application.job_id == job_id
     ).all()
     
@@ -758,7 +758,7 @@ async def bulk_download_applications(
                 individual_zip = create_download_package(
                     application_data,
                     job_data,
-                    application.resume_path,
+                    application. resume_path,
                     download_dir
                 )
                 
@@ -786,7 +786,7 @@ async def bulk_download_applications(
         )
 
 
-@router.get("/{job_id}/applications/export-csv")
+@router. get("/{job_id}/applications/export-csv")
 async def export_applications_csv(
     job_id: int,
     current_user: User = Depends(get_current_employer),
@@ -817,7 +817,7 @@ async def export_applications_csv(
     # Get all applications
     applications = db.query(Application).filter(
         Application.job_id == job_id
-    ).order_by(Application.score.desc().nullslast()).all()
+    ).order_by(Application.score.desc(). nullslast()).all()
     
     if not applications:
         raise HTTPException(
@@ -864,30 +864,30 @@ async def export_applications_csv(
             grade_display = 'N/A'
             if all_quals:
                 for qual in all_quals:
-                    if qual.get('grade'):
+                    if qual. get('grade'):
                         grade = qual['grade']
-                        grade_display = f"{grade.get('normalized_percentage', 0)}%"
+                        grade_display = f"{grade. get('normalized_percentage', 0)}%"
                         break
             
             writer.writerow([
                 app.id,
                 app.name,
-                app.phone,
+                app. phone,
                 app.current_company or 'N/A',
                 app.current_position or 'N/A',
-                f"{app.score:.1f}" if app.score else 'N/A',
+                f"{app.score:. 1f}" if app.score else 'N/A',
                 app.status,
                 matched_skills,
                 exp_years,
                 highest_edu,
                 grade_display,
-                app.created_at.strftime('%Y-%m-%d') if app.created_at else 'N/A'
+                app.created_at. strftime('%Y-%m-%d') if app.created_at else 'N/A'
             ])
         
         output.seek(0)
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{job.title.replace(' ', '_')}_Applications_{timestamp}.csv"
+        filename = f"{job.title.replace(' ', '_')}_Applications_{timestamp}. csv"
         
         return StreamingResponse(
             iter([output.getvalue()]),
@@ -902,97 +902,8 @@ async def export_applications_csv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export CSV: {str(e)}"
         )
-# Add this endpoint to your existing jobs. py
 
-@router.get("/{job_id}/analytics", response_model=dict)
-async def get_job_analytics(
-    job_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get analytics for a specific job (employer only)
-    Returns score distribution for pie chart
-    """
-    # Verify job belongs to employer
-    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found or you don't have permission"
-        )
-    
-    applications = db.query(Application).filter(Application.job_id == job_id).all()
-    
-    # Calculate score distribution
-    score_bands = {
-        "excellent": {"min": 80, "max": 100, "count": 0, "applications": []},
-        "good": {"min": 60, "max": 79, "count": 0, "applications": []},
-        "needs_review": {"min": 40, "max": 59, "count": 0, "applications": []},
-        "below_threshold": {"min": 0, "max": 39, "count": 0, "applications": []},
-    }
-    
-    for app in applications:
-        score = app.score or 0
-        app_data = {
-            "id": app.id,
-            "name": app.name or "Unknown",
-            "score": float(score) if score else 0.0,
-            "status": status_value,
-            "phone": app.phone or "",
-            "current_company": app.current_company or "",
-            "current_position": app.current_position or ""
-        }
-        
-        if score >= 80:
-            score_bands["excellent"]["count"] += 1
-            score_bands["excellent"]["applications"]. append(app_data)
-        elif score >= 60:
-            score_bands["good"]["count"] += 1
-            score_bands["good"]["applications"].append(app_data)
-        elif score >= 40:
-            score_bands["needs_review"]["count"] += 1
-            score_bands["needs_review"]["applications"].append(app_data)
-        else:
-            score_bands["below_threshold"]["count"] += 1
-            score_bands["below_threshold"]["applications"].append(app_data)
-    
-    return {
-        "job_id": job_id,
-        "job_title": job.title,
-        "total_applications": len(applications),
-        "score_distribution": [
-            {
-                "name": "Excellent (80-100)",
-                "value": score_bands["excellent"]["count"],
-                "color": "#22c55e",
-                "band": "excellent",
-                "applications": score_bands["excellent"]["applications"]
-            },
-            {
-                "name": "Good (60-79)",
-                "value": score_bands["good"]["count"],
-                "color": "#f59e0b",
-                "band": "good",
-                "applications": score_bands["good"]["applications"]
-            },
-            {
-                "name": "Needs Review (40-59)",
-                "value": score_bands["needs_review"]["count"],
-                "color": "#f97316",
-                "band": "needs_review",
-                "applications": score_bands["needs_review"]["applications"]
-            },
-            {
-                "name": "Below Threshold (0-39)",
-                "value": score_bands["below_threshold"]["count"],
-                "color": "#ef4444",
-                "band": "below_threshold",
-                "applications": score_bands["below_threshold"]["applications"]
-            }
-        ]
-    }
-
+# FIXED: Removed duplicate function, keeping only this corrected version
 @router.get("/{job_id}/analytics", response_model=dict)
 async def get_job_analytics(
     job_id: int,
@@ -1002,7 +913,7 @@ async def get_job_analytics(
     """Get analytics for a specific job (employer only)"""
     
     # Verify job belongs to employer
-    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id). first()
+    job = db.query(Job).filter(Job.id == job_id, Job.employer_id == current_user.id).first()
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1020,11 +931,11 @@ async def get_job_analytics(
     }
     
     for application in applications:
-        score = application. score or 0
+        score = application.score or 0
         
         # Handle status safely
         try:
-            status_value = application.status.value if hasattr(application.status, 'value') else str(application.status) if application.status else "pending"
+            status_value = application.status. value if hasattr(application.status, 'value') else str(application.status) if application.status else "pending"
         except:
             status_value = "pending"
         
@@ -1040,7 +951,7 @@ async def get_job_analytics(
         
         if score >= 80:
             score_bands["excellent"]["count"] += 1
-            score_bands["excellent"]["applications"]. append(app_data)
+            score_bands["excellent"]["applications"].append(app_data)
         elif score >= 60:
             score_bands["good"]["count"] += 1
             score_bands["good"]["applications"].append(app_data)
