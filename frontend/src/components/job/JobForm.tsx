@@ -202,7 +202,7 @@ export const JobForm = ({ initialData, onSubmit, onCancel }: JobFormProps) => {
           />
 
           <Input
-            label="Similarity Threshold (0.0 - 1.0)"
+            label="Evaluation Strictness (0.0 – 1.0)"
             name="similarity_threshold"
             type="number"
             step="0.1"

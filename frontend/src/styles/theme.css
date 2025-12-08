@@ -1,0 +1,52 @@
+/* Classic = neon gradient with moving background blob */
+:root {
+  --color-bg: #0f172a;
+  --color-surface: rgba(255,255,255,0.14);
+  --color-surface-alt: rgba(255,255,255,0.22);
+  --color-text: #ffffff;
+  --color-text-muted: rgba(255,255,255,0.72);
+  --color-border: rgba(255,255,255,0.22);
+  --color-accent: #7c3aed;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-error: #ef4444;
+}
+
+/* Replace this block with your original moving blob gradient if you have it */
+.classic-gradient {
+  background:
+    radial-gradient(900px 900px at 70% 20%, rgba(59,130,246,0.45) 0%, rgba(59,130,246,0.0) 60%),
+    linear-gradient(135deg, rgba(99,102,241,0.45) 0%, rgba(147,51,234,0.45) 50%, rgba(59,130,246,0.45) 100%),
+    #0f172a;
+  /* Example animated blob (optional) */
+  background-attachment: fixed;
+}
+
+/* Minimal = dark blue theme */
+[data-theme="minimal"] {
+  --color-bg: #0d1322;
+  --color-surface: rgba(255,255,255,0.08);
+  --color-surface-alt: rgba(255,255,255,0.14);
+  --color-text: #ffffff;
+  --color-text-muted: rgba(255,255,255,0.70);
+  --color-border: rgba(255,255,255,0.12);
+  --color-accent: #9aa4b2;
+  --color-success: #a3e635;
+  --color-warning: #facc15;
+  --color-error: #f87171;
+}
+/* Optional: Light minimal variant (if you later add light) */
+/*
+[data-theme="minimal-light"] {
+  --color-bg: #fafafa;
+  --color-surface: rgba(0,0,0,0.06);
+  --color-surface-alt: rgba(0,0,0,0.10);
+  --color-text: #0b0b0b;
+  --color-text-muted: rgba(11,11,11,0.72);
+  --color-border: rgba(0,0,0,0.12);
+  --color-accent: #1f2937;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+}
+*/
