@@ -20,10 +20,10 @@ export const GlassCard = ({
     <div
       onClick={onClick}
       className={cn(
-        'bg-white/10 backdrop-blur-xl rounded-3xl p-8',
-        'shadow-2xl border border-white/20',
+        'bg-white/5 backdrop-blur-xl rounded-3xl p-8',
+        'shadow-2xl border border-white/10',
         'transition-all duration-500',
-        hover && 'hover:scale-105 hover:bg-white/20 hover:shadow-3xl',
+        hover && 'hover:scale-105 hover:bg-white/10 hover:shadow-3xl',
         animate && 'animate-fadeIn',
         onClick && 'cursor-pointer',
         className
