@@ -80,7 +80,7 @@ export default function ChatPage() {
             <span className="font-semibold">Global Chat</span>
           </button>
 
-          <button
+          {/* <button
             onClick={() => setChatType('direct')}
             className={`flex items-center space-x-2 px-6 py-3 rounded-xl transition-all ${
               chatType === 'direct'
@@ -90,7 +90,7 @@ export default function ChatPage() {
           >
             <MessageCircle className="w-5 h-5" />
             <span className="font-semibold">Direct Messages</span>
-          </button>
+          </button> */}
         </div>
 
         {/* Chat Layout */}

@@ -56,11 +56,51 @@ export const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = (
   };
 
   // Download resume handler
-  const handleDownloadResume = () => {
-    // In production, this should be a proper backend endpoint
-    const resumeUrl = `http://localhost:8000/uploads/${application.resume_path}`;
-    window.open(resumeUrl, '_blank');
-  };
+const handleDownloadResume = async () => {
+  try {
+    // Extract job_id and application_id from the application object
+    const jobId = application.job_id;
+    const applicationId = application. id;
+    
+    // Use the proper backend API endpoint
+    const response = await fetch(
+      `http://localhost:8000/jobs/${jobId}/applications/${applicationId}/download? file_type=resume`,
+      {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to download resume');
+    }
+
+    // Get the filename from content-disposition header or use a default
+    const contentDisposition = response.headers.get('content-disposition');
+    let filename = 'resume.pdf';
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition. match(/filename="? (. +)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    // Create blob and download
+    const blob = await response. blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document. createElement('a');
+    a.href = url;
+    a. download = filename;
+    document. body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Error downloading resume:', error);
+    alert('Failed to download resume. Please try again.');
+  }
+};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
