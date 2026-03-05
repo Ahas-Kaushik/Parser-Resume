@@ -1,22 +1,38 @@
 """
-Chat Router
-Handles real-time chat messages (global and direct)
+Chat Router — Fully fixed + enhanced
+Handles: global chat, direct messages, user search, conversations list.
+Also sends inbox notifications on new DMs.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.user import User
 from app.models.chat import ChatMessage
+from app.models.notification import Notification, NotificationType
 from app.schemas.chat import ChatMessageCreate, ChatMessageResponse
 from app.dependencies import get_current_user
 from app.config import settings
-from sqlalchemy import or_
 
 router = APIRouter()
+
+
+def _create_dm_notification(db: Session, sender: User, receiver_id: int, message_preview: str):
+    """Helper: create an inbox notification for a new DM"""
+    notif = Notification(
+        user_id=receiver_id,
+        type=NotificationType.DIRECT_MESSAGE,
+        title=f"New message from {sender.name}",
+        message=message_preview[:100] + ("..." if len(message_preview) > 100 else ""),
+        link="/chat",
+        is_read=False
+    )
+    db.add(notif)
+    # Don't commit here — caller commits
 
 
 @router.post("/send", response_model=ChatMessageResponse, status_code=status.HTTP_201_CREATED)
@@ -25,36 +41,32 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Send a chat message (global or direct)
-    
-    - **message**: Message content (max 1000 characters)
-    - **receiver_id**: Recipient user ID (null for global chat)
-    - **is_global**: True for global chat, False for direct message
-    """
-    
-    # Validate receiver exists if direct message
+    """Send a chat message (global or direct)"""
+
+    if not message_data.message or not message_data.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    # Validate receiver exists for DMs
     if not message_data.is_global and message_data.receiver_id:
         receiver = db.query(User).filter(User.id == message_data.receiver_id).first()
         if not receiver:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Receiver not found"
-            )
-    
-    # Create message
+            raise HTTPException(status_code=404, detail="Receiver not found")
+
     new_message = ChatMessage(
         sender_id=current_user.id,
-        receiver_id=message_data.receiver_id,
-        message=message_data.message,
+        receiver_id=message_data.receiver_id if not message_data.is_global else None,
+        message=message_data.message.strip(),
         is_global=message_data.is_global
     )
-    
     db.add(new_message)
+
+    # Create DM notification for receiver
+    if not message_data.is_global and message_data.receiver_id:
+        _create_dm_notification(db, current_user, message_data.receiver_id, message_data.message)
+
     db.commit()
     db.refresh(new_message)
-    
-    # Return with sender name
+
     return {
         "id": new_message.id,
         "sender_id": new_message.sender_id,
@@ -72,26 +84,16 @@ async def get_global_messages(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get global chat messages
-    
-    - **limit**: Maximum number of messages to return (default: 50)
-    """
-    
-    # Get recent messages within history window
+    """Get global chat messages"""
     cutoff_date = datetime.utcnow() - timedelta(days=settings.CHAT_HISTORY_DAYS)
-    
+
     messages = db.query(ChatMessage).filter(
         ChatMessage.is_global == True,
         ChatMessage.created_at >= cutoff_date
-    ).order_by(
-        ChatMessage.created_at.desc()
-    ).limit(min(limit, settings.CHAT_MESSAGE_LIMIT)).all()
-    
-    # Reverse to show oldest first
-    messages = messages[::-1]
-    
-    # Add sender names
+    ).order_by(ChatMessage.created_at.desc()).limit(min(limit, settings.CHAT_MESSAGE_LIMIT)).all()
+
+    messages = messages[::-1]  # oldest first
+
     result = []
     for msg in messages:
         sender = db.query(User).filter(User.id == msg.sender_id).first()
@@ -104,7 +106,6 @@ async def get_global_messages(
             "is_global": True,
             "created_at": msg.created_at
         })
-    
     return result
 
 
@@ -115,39 +116,24 @@ async def get_direct_messages(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get direct messages between current user and another user
-    
-    - **user_id**: ID of the other user
-    - **limit**: Maximum number of messages to return (default: 50)
-    """
-    
-    # Verify other user exists
+    """Get direct messages between current user and another user"""
     other_user = db.query(User).filter(User.id == user_id).first()
     if not other_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    # Get messages between users
+        raise HTTPException(status_code=404, detail="User not found")
+
     cutoff_date = datetime.utcnow() - timedelta(days=settings.CHAT_HISTORY_DAYS)
-    
+
     messages = db.query(ChatMessage).filter(
         ChatMessage.is_global == False,
         ChatMessage.created_at >= cutoff_date,
-        (
-            ((ChatMessage.sender_id == current_user.id) & (ChatMessage.receiver_id == user_id)) |
-            ((ChatMessage.sender_id == user_id) & (ChatMessage.receiver_id == current_user.id))
+        or_(
+            (ChatMessage.sender_id == current_user.id) & (ChatMessage.receiver_id == user_id),
+            (ChatMessage.sender_id == user_id) & (ChatMessage.receiver_id == current_user.id)
         )
-    ).order_by(
-        ChatMessage.created_at.desc()
-    ).limit(min(limit, settings.CHAT_MESSAGE_LIMIT)).all()
-    
-    # Reverse to show oldest first
+    ).order_by(ChatMessage.created_at.desc()).limit(min(limit, settings.CHAT_MESSAGE_LIMIT)).all()
+
     messages = messages[::-1]
-    
-    # Add sender names
+
     result = []
     for msg in messages:
         sender = db.query(User).filter(User.id == msg.sender_id).first()
@@ -160,32 +146,8 @@ async def get_direct_messages(
             "is_global": False,
             "created_at": msg.created_at
         })
-    
     return result
 
-
-@router.get("/users", response_model=List[dict])
-async def get_chat_users(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get list of users for direct messaging
-    """
-    
-    users = db.query(User).filter(User.id != current_user.id).all()
-    
-    return [
-        {
-            "id": user.id,
-            "name": user.name,
-            "role": user.role.value
-        }
-        for user in users
-    ]
-# Add these imports and endpoints to your existing chat. py
-
-from sqlalchemy import or_
 
 @router.get("/users/search", response_model=List[dict])
 async def search_users(
@@ -193,12 +155,10 @@ async def search_users(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Search users by name or email for DM
-    """
-    if len(query) < 2:
+    """Search users by name or email for starting a DM"""
+    if len(query.strip()) < 2:
         return []
-    
+
     users = db.query(User).filter(
         User.id != current_user.id,
         or_(
@@ -206,16 +166,18 @@ async def search_users(
             User.email.ilike(f"%{query}%")
         )
     ).limit(10).all()
-    
-    return [
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-            "role": user.role
-        }
-        for user in users
-    ]
+
+    return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role} for u in users]
+
+
+@router.get("/users", response_model=List[dict])
+async def get_chat_users(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all users available for direct messaging"""
+    users = db.query(User).filter(User.id != current_user.id).all()
+    return [{"id": u.id, "name": u.name, "role": u.role} for u in users]
 
 
 @router.get("/conversations", response_model=List[dict])
@@ -223,49 +185,53 @@ async def get_conversations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get list of DM conversations for current user
-    """
-    # Get distinct users the current user has chatted with
-    from sqlalchemy import distinct, union_all
-    
-    sent_to = db.query(ChatMessage.receiver_id. label('user_id')).filter(
+    """Get all DM conversations for current user's inbox sidebar"""
+    # Find all user IDs this user has exchanged DMs with
+    sent_to = db.query(ChatMessage.receiver_id.label('user_id')).filter(
         ChatMessage.sender_id == current_user.id,
         ChatMessage.is_global == False,
-        ChatMessage.receiver_id != None
-    )
-    
+        ChatMessage.receiver_id.isnot(None)
+    ).all()
+
     received_from = db.query(ChatMessage.sender_id.label('user_id')).filter(
         ChatMessage.receiver_id == current_user.id,
-        ChatMessage. is_global == False
+        ChatMessage.is_global == False
+    ).all()
+
+    conversation_user_ids = set(
+        [r.user_id for r in sent_to] + [r.user_id for r in received_from]
     )
-    
-    conversation_user_ids = set()
-    for msg in sent_to. all():
-        conversation_user_ids.add(msg.user_id)
-    for msg in received_from.all():
-        conversation_user_ids. add(msg.user_id)
-    
+
     conversations = []
-    for user_id in conversation_user_ids:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            # Get last message
-            last_message = db.query(ChatMessage).filter(
-                ChatMessage.is_global == False,
-                or_(
-                    (ChatMessage.sender_id == current_user.id) & (ChatMessage.receiver_id == user_id),
-                    (ChatMessage.sender_id == user_id) & (ChatMessage.receiver_id == current_user.id)
-                )
-            ).order_by(ChatMessage.created_at.desc()).first()
-            
-            conversations.append({
-                "user_id": user.id,
-                "user_name": user.name,
-                "last_message": last_message.message[:50] if last_message else None,
-                "last_message_at": last_message.created_at if last_message else None
-            })
-    
-    # Sort by last message time
+    for uid in conversation_user_ids:
+        user = db.query(User).filter(User.id == uid).first()
+        if not user:
+            continue
+
+        last_message = db.query(ChatMessage).filter(
+            ChatMessage.is_global == False,
+            or_(
+                (ChatMessage.sender_id == current_user.id) & (ChatMessage.receiver_id == uid),
+                (ChatMessage.sender_id == uid) & (ChatMessage.receiver_id == current_user.id)
+            )
+        ).order_by(ChatMessage.created_at.desc()).first()
+
+        # Count unread messages from this user
+        unread_count = db.query(ChatMessage).filter(
+            ChatMessage.sender_id == uid,
+            ChatMessage.receiver_id == current_user.id,
+            ChatMessage.is_global == False,
+            ChatMessage.is_read == False
+        ).count()
+
+        conversations.append({
+            "user_id": user.id,
+            "user_name": user.name,
+            "user_role": user.role,
+            "last_message": last_message.message[:60] if last_message else None,
+            "last_message_at": last_message.created_at if last_message else None,
+            "unread_count": unread_count
+        })
+
     conversations.sort(key=lambda x: x['last_message_at'] or datetime.min, reverse=True)
     return conversations

@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 
 
+# ── Keep this here — do NOT import from models (causes circular import) ──
 class UserRole(str, Enum):
     """User role enumeration"""
     CANDIDATE = "candidate"
@@ -25,9 +26,9 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """User creation schema"""
-    password: str = Field(..., min_length=6, max_length=50)  # MAX 50 chars
+    password: str = Field(..., min_length=6, max_length=50)
     password_confirm: str
-    
+
     @validator('password')
     def password_strength(cls, v):
         """Validate password strength"""
@@ -47,8 +48,13 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     """User response schema"""
     id: int
-    created_at: datetime
-    
+    created_at: Optional[datetime] = None   # Optional — OAuth users may not have it yet
+
+    # OAuth fields — Optional so normal email users work fine
+    avatar_url: Optional[str] = None
+    oauth_provider: Optional[str] = None
+    is_active: Optional[bool] = True
+
     class Config:
         from_attributes = True
 

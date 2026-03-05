@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 
-// Pages
+// Existing pages
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -14,7 +14,11 @@ import PostJobPage from './pages/PostJobPage';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
 
-// Components
+// New pages
+import InboxPage from './pages/InboxPage';
+import OAuthSelectRolePage from './pages/OAuthSelectRolePage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
+
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 
 function App() {
@@ -30,77 +34,45 @@ function App() {
         <Route path="/jobs" element={<JobListings />} />
         <Route path="/jobs/:jobId" element={<JobDetails />} />
 
+        {/* OAuth Routes (public — no auth required) */}
+        <Route path="/oauth/select-role" element={<OAuthSelectRolePage />} />
+        <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+
         {/* Protected Routes - Candidate */}
-        <Route
-          path="/candidate/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={['candidate']}>
-              <CandidateDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/candidate/applications"
-          element={
-            <ProtectedRoute allowedRoles={['candidate']}>
-              <ApplicationStatus />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/candidate/dashboard" element={
+          <ProtectedRoute allowedRoles={['candidate']}><CandidateDashboard /></ProtectedRoute>
+        } />
+        <Route path="/candidate/applications" element={
+          <ProtectedRoute allowedRoles={['candidate']}><ApplicationStatus /></ProtectedRoute>
+        } />
 
         {/* Protected Routes - Employer */}
-        <Route
-          path="/employer/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={['employer']}>
-              <EmployerDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/employer/post-job"
-          element={
-            <ProtectedRoute allowedRoles={['employer']}>
-              <PostJobPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/employer/dashboard" element={
+          <ProtectedRoute allowedRoles={['employer']}><EmployerDashboard /></ProtectedRoute>
+        } />
+        <Route path="/employer/post-job" element={
+          <ProtectedRoute allowedRoles={['employer']}><PostJobPage /></ProtectedRoute>
+        } />
 
-        {/* Protected Routes - Both */}
-        <Route
-          path="/chat"
-          element={
-            <ProtectedRoute allowedRoles={['candidate', 'employer']}>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute allowedRoles={['candidate', 'employer']}>
-              <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Protected Routes - Both roles */}
+        <Route path="/chat" element={
+          <ProtectedRoute allowedRoles={['candidate', 'employer']}><ChatPage /></ProtectedRoute>
+        } />
+        <Route path="/profile" element={
+          <ProtectedRoute allowedRoles={['candidate', 'employer']}><ProfilePage /></ProtectedRoute>
+        } />
+        {/* NEW: Inbox */}
+        <Route path="/inbox" element={
+          <ProtectedRoute allowedRoles={['candidate', 'employer']}><InboxPage /></ProtectedRoute>
+        } />
 
-        {/* Redirect /dashboard based on role */}
-        <Route
-          path="/dashboard"
-          element={
-            user ? (
-              user.role === 'employer' ? (
-                <Navigate to="/employer/dashboard" replace />
-              ) : (
-                <Navigate to="/candidate/dashboard" replace />
-              )
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
+        {/* Role-based dashboard redirect */}
+        <Route path="/dashboard" element={
+          user
+            ? <Navigate to={user.role === 'employer' ? '/employer/dashboard' : '/candidate/dashboard'} replace />
+            : <Navigate to="/login" replace />
+        } />
 
-        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

@@ -10,6 +10,9 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 from app.dependencies import create_access_token, get_current_user
 from app.utils.security import hash_password, verify_password
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -18,7 +21,7 @@ router = APIRouter()
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user (candidate or employer)
-    
+
     - **name**: User's full name
     - **email**: Valid email address (must be unique)
     - **phone**: Phone number (optional)
@@ -26,7 +29,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     - **password**: Strong password (min 6 characters)
     - **password_confirm**: Must match password
     """
-    
+
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
@@ -34,23 +37,33 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
+    # Validate passwords match
+    if user_data.password != user_data.password_confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match"
+        )
+
     # Hash password
     hashed_password = hash_password(user_data.password)
-    
+
     # Create new user
     new_user = User(
         name=user_data.name,
         email=user_data.email,
         phone=user_data.phone,
         role=user_data.role,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
+        is_active=True,
+        oauth_provider="local"
     )
-    
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
+    logger.info(f"New user registered: {new_user.email} ({new_user.role})")
     return new_user
 
 
@@ -58,13 +71,13 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 async def login(credentials: UserLogin, db: Session = Depends(get_db)):
     """
     Login and receive JWT token
-    
+
     - **email**: Registered email address
     - **password**: User's password
-    
+
     Returns JWT token and user information
     """
-    
+
     # Find user by email
     user = db.query(User).filter(User.email == credentials.email).first()
     if not user:
@@ -73,7 +86,14 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    # OAuth users have no password
+    if not user.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account uses Google or GitHub login. Please sign in with OAuth."
+        )
+
     # Verify password
     if not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
@@ -81,7 +101,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Create JWT token
     access_token = create_access_token(
         data={
@@ -90,7 +110,8 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             "role": user.role.value
         }
     )
-    
+
+    logger.info(f"User logged in: {user.email}")
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -102,7 +123,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """
     Get current authenticated user information
-    
+
     Requires valid JWT token in Authorization header
     """
     return current_user
@@ -117,17 +138,17 @@ async def update_profile(
 ):
     """
     Update current user profile
-    
+
     - **name**: New name (optional)
     - **phone**: New phone number (optional)
     """
-    
+
     if name:
         current_user.name = name
     if phone:
         current_user.phone = phone
-    
+
     db.commit()
     db.refresh(current_user)
-    
+
     return current_user

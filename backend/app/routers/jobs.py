@@ -27,6 +27,7 @@ from app.utils.resume_parser import evaluate_resume
 from app.utils.report_generator import AIScreeningReportGenerator, create_download_package
 from app.utils.email_utils import send_application_confirmation, send_application_result, send_new_application_notification
 from app.config import settings
+from app.models.notification import Notification, NotificationType
 
 router = APIRouter()
 
@@ -106,6 +107,19 @@ async def create_job(
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
+    all_users = db.query(User).filter(User.id != current_user.id, User.is_active == True).all()
+    notifications = [
+        Notification(
+        user_id=user.id,
+        type=NotificationType.NEW_JOB,
+        title=f"New Job: {new_job.title}",
+        message=f"{current_user.name} posted a new job: {new_job.title} at {new_job.company}",
+        link=f"/jobs/{new_job.id}",
+        is_read=False)
+        for user in all_users
+    ]
+    db.bulk_save_objects(notifications)
+    db.commit()
     
     return new_job
 

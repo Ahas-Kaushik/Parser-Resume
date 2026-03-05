@@ -1,6 +1,5 @@
 """
-Application Configuration
-Handles all environment variables and settings
+Application Configuration — Updated with OAuth + Frontend URL settings
 """
 
 from pydantic_settings import BaseSettings
@@ -9,59 +8,40 @@ import os
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-
-    # ========================================
-    # APPLICATION SETTINGS
-    # ========================================
     APP_NAME: str = "Fetch Ya Job"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
-    # ========================================
-    # DATABASE SETTINGS
-    # ========================================
     DATABASE_URL: str = "sqlite:///./app.db"
 
-    # ========================================
-    # SECURITY SETTINGS
-    # ========================================
     SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
-
-    # Old naming (backwards compatibility)
     JWT_SECRET: Optional[str] = None
     JWT_ALGORITHM: Optional[str] = None
-    # FIX: Default to 7 days so timedelta(days=None) never crashes
     JWT_EXPIRATION_DAYS: int = 7
 
     @property
     def secret_key(self) -> str:
-        """
-        FIX: Raise an error at startup if no secret key is configured.
-        Never silently fall back to a hardcoded insecure key in production.
-        """
         key = self.SECRET_KEY or self.JWT_SECRET
         if not key:
             raise ValueError(
-                "CRITICAL: JWT_SECRET / SECRET_KEY environment variable is not set. "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                "JWT_SECRET / SECRET_KEY environment variable is not set. "
+                "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
             )
         return key
 
     @property
     def algorithm(self) -> str:
-        """Get algorithm (supports both naming conventions)"""
         return self.ALGORITHM or self.JWT_ALGORITHM or "HS256"
 
-    # ========================================
-    # FILE UPLOAD SETTINGS
-    # ========================================
+    # ── File Upload ────────────────────────────────────────
     UPLOAD_DIR: str = "./storage"
     MAX_UPLOAD_SIZE: Optional[int] = None
     MAX_FILE_SIZE: Optional[int] = None
     ALLOWED_EXTENSIONS: str = "pdf,docx,txt"
+    DOWNLOADS_DIR: str = "./storage/downloads"
+    MAX_BULK_DOWNLOAD: int = 50
 
     @property
     def max_upload_size(self) -> int:
@@ -71,15 +51,7 @@ class Settings(BaseSettings):
     def allowed_extensions_list(self) -> List[str]:
         return [ext.strip().lower() for ext in self.ALLOWED_EXTENSIONS.split(",")]
 
-    # ========================================
-    # DOWNLOAD SETTINGS
-    # ========================================
-    DOWNLOADS_DIR: str = "./storage/downloads"
-    MAX_BULK_DOWNLOAD: int = 50
-
-    # ========================================
-    # EMAIL SETTINGS
-    # ========================================
+    # ── Email ──────────────────────────────────────────────
     EMAIL_ENABLED: bool = False
     SMTP_ENABLED: bool = False
     SMTP_HOST: Optional[str] = "smtp.gmail.com"
@@ -98,46 +70,44 @@ class Settings(BaseSettings):
     def smtp_from_email(self) -> str:
         return self.SMTP_FROM_EMAIL or self.SMTP_FROM or "noreply@fetchyajob.com"
 
-    # ========================================
-    # CORS SETTINGS
-    # ========================================
+    # ── CORS ───────────────────────────────────────────────
     CORS_ORIGINS: Optional[str] = None
     ALLOWED_ORIGINS: Optional[str] = None
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """
-        FIX: In production, ALLOWED_ORIGINS must be set explicitly.
-        Default falls back to localhost only (safe default).
-        """
         origins_str = self.CORS_ORIGINS or self.ALLOWED_ORIGINS or "http://localhost:80,http://localhost:5173"
-        return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+        return [o.strip() for o in origins_str.split(",") if o.strip()]
 
-    # ========================================
-    # CHAT SETTINGS
-    # ========================================
+    # ── Frontend URL (for OAuth redirects) ────────────────
+    # In production: https://your-app.vercel.app
+    # In development: http://localhost:5173
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # ── Google OAuth ───────────────────────────────────────
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/oauth/google/callback"
+
+    # ── GitHub OAuth ───────────────────────────────────────
+    GITHUB_CLIENT_ID: Optional[str] = None
+    GITHUB_CLIENT_SECRET: Optional[str] = None
+    GITHUB_REDIRECT_URI: str = "http://localhost:8000/oauth/github/callback"
+
+    # ── Chat ───────────────────────────────────────────────
     CHAT_MESSAGE_LIMIT: int = 100
     CHAT_HISTORY_DAYS: int = 30
 
-    # ========================================
-    # AI/ML SETTINGS
-    # ========================================
+    # ── AI/ML ──────────────────────────────────────────────
     AI_SCORING_ENABLED: bool = True
     DEFAULT_SIMILARITY_THRESHOLD: float = 0.6
     DEFAULT_MIN_SCORE: float = 70.0
     DEFAULT_SCORE_THRESHOLD: float = 70.0
-
     DEFAULT_WEIGHTS: dict = {
-        "skills_all": 25.0,
-        "skills_any": 15.0,
-        "experience": 15.0,
-        "similarity": 20.0,
-        "education": 25.0
+        "skills_all": 25.0, "skills_any": 15.0,
+        "experience": 15.0, "similarity": 20.0, "education": 25.0
     }
 
-    # ========================================
-    # REPORT GENERATION SETTINGS
-    # ========================================
     REPORT_LOGO_PATH: Optional[str] = None
     REPORT_FOOTER_TEXT: str = "Generated by Fetch Ya Job AI System"
 
@@ -147,14 +117,8 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
-# FIX: Instantiating settings here will raise ValueError at startup
-# if JWT_SECRET is missing — fail fast, don't silently use insecure defaults.
 settings = Settings()
 
-
-# ========================================
-# HELPER FUNCTIONS
-# ========================================
 
 def get_upload_path(*paths: str) -> str:
     return os.path.join(settings.UPLOAD_DIR, *paths)
@@ -166,35 +130,24 @@ def get_download_path(*paths: str) -> str:
 
 def ensure_directories_exist():
     directories = [
-        settings.UPLOAD_DIR,
-        settings.DOWNLOADS_DIR,
+        settings.UPLOAD_DIR, settings.DOWNLOADS_DIR,
         os.path.join(settings.UPLOAD_DIR, "jobs"),
         os.path.join(settings.UPLOAD_DIR, "downloads"),
         os.path.join(settings.UPLOAD_DIR, "temp"),
     ]
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
-        print(f"✓ Directory ensured: {directory}")
 
 
 def display_settings():
-    """Display current settings (only called when DEBUG=True)"""
     print("\n" + "=" * 60)
-    print("🔧 APPLICATION SETTINGS")
+    print("APPLICATION SETTINGS")
     print("=" * 60)
-    print(f"App Name: {settings.APP_NAME}")
-    print(f"Version: {settings.APP_VERSION}")
-    print(f"Debug Mode: {settings.DEBUG}")
-    # FIX: Never print DATABASE_URL — it may contain passwords
     db_safe = settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL
-    print(f"Database Host: {db_safe}")
-    print(f"Upload Dir: {settings.UPLOAD_DIR}")
-    print(f"Downloads Dir: {settings.DOWNLOADS_DIR}")
-    print(f"Allowed Extensions: {settings.ALLOWED_EXTENSIONS}")
-    print(f"Max Upload Size: {settings.max_upload_size / (1024 * 1024):.1f} MB")
-    print(f"SMTP Enabled: {settings.smtp_enabled}")
-    print(f"AI Scoring: {settings.AI_SCORING_ENABLED}")
-    print(f"Default Score Threshold: {settings.DEFAULT_SCORE_THRESHOLD}")
-    print(f"CORS Origins: {', '.join(settings.cors_origins_list)}")
-    print(f"Chat Message Limit: {settings.CHAT_MESSAGE_LIMIT}")
+    print(f"Database: {db_safe}")
+    print(f"Debug: {settings.DEBUG}")
+    print(f"CORS: {settings.cors_origins_list}")
+    print(f"Frontend URL: {settings.FRONTEND_URL}")
+    print(f"Google OAuth: {'configured' if settings.GOOGLE_CLIENT_ID else 'NOT SET'}")
+    print(f"GitHub OAuth: {'configured' if settings.GITHUB_CLIENT_ID else 'NOT SET'}")
     print("=" * 60 + "\n")
