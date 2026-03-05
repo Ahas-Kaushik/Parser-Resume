@@ -7,6 +7,7 @@ interface GlassCardProps {
   hover?: boolean;
   animate?: boolean;
   onClick?: () => void;
+  id?: string;
 }
 
 export const GlassCard = ({
@@ -15,9 +16,11 @@ export const GlassCard = ({
   hover = true,
   animate = false,
   onClick,
+  id,
 }: GlassCardProps) => {
   return (
     <div
+      id={id}
       onClick={onClick}
       className={cn(
         'bg-white/5 backdrop-blur-xl rounded-3xl p-8',

@@ -3,8 +3,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 import { Eye, X } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { ApplicationDetailsModal } from '../application/ApplicationDetailsModal';
-import type { Application } from '../../types';
 
 interface ScoreBand {
   name: string;
@@ -19,6 +17,7 @@ interface ScoreBand {
     email: string;
     phone: string;
   }[];
+  [key: string]: unknown;
 }
 
 interface ScorePieChartProps {
@@ -29,7 +28,6 @@ interface ScorePieChartProps {
 
 export const ScorePieChart = ({ data, jobTitle, onViewApplication }: ScorePieChartProps) => {
   const [selectedBand, setSelectedBand] = useState<ScoreBand | null>(null);
-  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
 
   const filteredData = data.filter(item => item.value > 0);
 
@@ -38,7 +36,7 @@ export const ScorePieChart = ({ data, jobTitle, onViewApplication }: ScorePieCha
   };
 
   const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload. length) {
+    if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div className="bg-slate-800/95 backdrop-blur-lg rounded-lg px-4 py-3 border border-white/20">
@@ -161,11 +159,11 @@ export const ScorePieChart = ({ data, jobTitle, onViewApplication }: ScorePieCha
                             className="text-lg font-bold"
                             style={{ color: selectedBand.color }}
                           >
-                            {app.score. toFixed(1)}/100
+                            {app.score.toFixed(1)}/100
                           </span>
                           <span
                             className={`px-2 py-1 rounded text-xs ${
-                              app. status === 'selected'
+                              app.status === 'selected'
                                 ? 'bg-green-500/20 text-green-300'
                                 : app.status === 'rejected'
                                 ? 'bg-red-500/20 text-red-300'

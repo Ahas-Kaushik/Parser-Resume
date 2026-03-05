@@ -71,26 +71,26 @@ export const ApplicationCard = ({ application, showJobDetails = false }: Applica
         </div>
 
         {/* Explanation Summary */}
-        {application.explanation && application.explanation.summary && (
+        {application.explanation?.summary && (
           <div className="pt-4 border-t border-white/20">
             <h4 className="text-white font-semibold mb-2">Screening Summary:</h4>
-            
-            {application.explanation.summary.reasons_pass?.length > 0 && (
+
+            {(application.explanation.summary.reasons_pass?.length ?? 0) > 0 && (
               <div className="mb-2">
                 <p className="text-green-300 text-sm font-medium mb-1">✓ Passed:</p>
                 <ul className="space-y-1">
-                  {application.explanation.summary.reasons_pass.map((reason: string, idx: number) => (
+                  {application.explanation.summary.reasons_pass?.map((reason: string, idx: number) => (
                     <li key={idx} className="text-green-200/80 text-xs pl-4">• {reason}</li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {application.explanation.summary.reasons_fail?.length > 0 && (
+            {(application.explanation.summary.reasons_fail?.length ?? 0) > 0 && (
               <div>
                 <p className="text-red-300 text-sm font-medium mb-1">✗ Issues:</p>
                 <ul className="space-y-1">
-                  {application.explanation.summary.reasons_fail.map((reason: string, idx: number) => (
+                  {application.explanation.summary.reasons_fail?.map((reason: string, idx: number) => (
                     <li key={idx} className="text-red-200/80 text-xs pl-4">• {reason}</li>
                   ))}
                 </ul>
