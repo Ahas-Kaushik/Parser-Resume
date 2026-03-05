@@ -11,6 +11,9 @@ from datetime import datetime, timedelta
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+import logging
+
+logger = logging.getLogger(__name__)
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -19,25 +22,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 def create_access_token(data: dict) -> str:
     """
     Create JWT access token
-    
+
     Args:
         data: Dictionary containing user data to encode
-    
+
     Returns:
         Encoded JWT token string
     """
     to_encode = data.copy()
-    
+
     # Convert 'sub' to string if it exists and is an integer
     if 'sub' in to_encode and isinstance(to_encode['sub'], int):
         to_encode['sub'] = str(to_encode['sub'])
-    
+
+    # FIX: Use settings.JWT_EXPIRATION_DAYS which now has a safe default of 7.
+    # Previously this could be None, causing timedelta(days=None) -> TypeError crash.
     expire = datetime.utcnow() + timedelta(days=settings.JWT_EXPIRATION_DAYS)
     to_encode.update({"exp": expire})
+
+    # FIX: Use settings.secret_key (property) which raises ValueError if not set,
+    # instead of settings.JWT_SECRET which could be None.
     encoded_jwt = jwt.encode(
         to_encode,
-        settings.JWT_SECRET,
-        algorithm=settings.JWT_ALGORITHM
+        settings.secret_key,
+        algorithm=settings.algorithm
     )
     return encoded_jwt
 
@@ -45,13 +53,13 @@ def create_access_token(data: dict) -> str:
 def verify_token(token: str) -> dict:
     """
     Verify and decode JWT token
-    
+
     Args:
         token: JWT token string
-    
+
     Returns:
         Decoded token payload
-    
+
     Raises:
         HTTPException: If token is invalid or expired
     """
@@ -60,41 +68,37 @@ def verify_token(token: str) -> dict:
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
-        print(f"🔍 Verifying token: {token[:30]}...")
-        
+        # FIX: Removed console.log of token contents — never log tokens in production
+        logger.debug("Verifying incoming JWT token")
+
+        # FIX: Use settings.secret_key (raises if missing) instead of settings.JWT_SECRET
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET,
-            algorithms=[settings.JWT_ALGORITHM]
+            settings.secret_key,
+            algorithms=[settings.algorithm]
         )
-        
-        print(f"✅ Token decoded successfully:")
-        print(f"   - User ID: {payload.get('sub')}")
-        print(f"   - Email: {payload.get('email')}")
-        print(f"   - Role: {payload.get('role')}")
-        print(f"   - Expires: {payload.get('exp')}")
-        
+
         user_id_str: str = payload.get("sub")
         if user_id_str is None:
-            print("❌ Token missing 'sub' (user_id)")
+            logger.warning("Token missing 'sub' claim")
             raise credentials_exception
-        
+
         # Convert string back to integer
         try:
             payload['sub'] = int(user_id_str)
         except (ValueError, TypeError):
-            print("❌ Invalid user ID format")
+            logger.warning("Invalid user ID format in token 'sub' claim")
             raise credentials_exception
-            
+
         return payload
-        
+
     except jwt.ExpiredSignatureError:
-        print("❌ Token has expired")
+        logger.info("Token has expired")
         raise credentials_exception
     except JWTError as e:
-        print(f"❌ JWT Error: {e}")
+        logger.warning(f"JWT validation error: {type(e).__name__}")
         raise credentials_exception
 
 
@@ -104,60 +108,37 @@ async def get_current_user(
 ) -> User:
     """
     Get current authenticated user from token
-    
+
     Args:
         token: JWT token from request header
         db: Database session
-    
+
     Returns:
         User object
-    
+
     Raises:
         HTTPException: If user not found or token invalid
     """
-    print(f"\n{'='*60}")
-    print(f"🔐 get_current_user called")
-    print(f"{'='*60}")
-    
     payload = verify_token(token)
     user_id: int = payload.get("sub")
-    
-    print(f"🔍 Looking up user with ID: {user_id}")
-    
+
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if user is None:
-        print(f"❌ User with ID {user_id} not found in database")
+        logger.warning(f"Token valid but user ID {user_id} not found in database")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    print(f"✅ User found:")
-    print(f"   - ID: {user.id}")
-    print(f"   - Email: {user.email}")
-    print(f"   - Role: {user.role}")
-    print(f"{'='*60}\n")
-    
+
     return user
 
 
 async def get_current_employer(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """
-    Ensure current user is an employer
-    
-    Args:
-        current_user: Current authenticated user
-    
-    Returns:
-        User object if employer
-    
-    Raises:
-        HTTPException: If user is not an employer
-    """
+    """Ensure current user is an employer"""
     if current_user.role != "employer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -169,18 +150,7 @@ async def get_current_employer(
 async def get_current_candidate(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """
-    Ensure current user is a candidate
-    
-    Args:
-        current_user: Current authenticated user
-    
-    Returns:
-        User object if candidate
-    
-    Raises:
-        HTTPException: If user is not a candidate
-    """
+    """Ensure current user is a candidate"""
     if current_user.role != "candidate":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

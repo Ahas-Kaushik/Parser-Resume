@@ -1,9 +1,7 @@
+# ========================================
+# AI-Powered Job Portal - Docker Compose (PRODUCTION)
+# ========================================
 
----
-
-## 📝 File: `docker-compose.yml`
-
-```yaml
 version: '3.8'
 
 services:
@@ -13,37 +11,50 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
-      - DATABASE_URL=sqlite:///./app.db
+      # FIX: JWT_SECRET must be set in your .env file - no more fallback
+      - JWT_SECRET=${JWT_SECRET}
+      # FIX: Use PostgreSQL in production. Set DATABASE_URL in your .env file.
+      # For local/quick dev with SQLite, fallback is still sqlite (override via .env)
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./app.db}
       - UPLOAD_DIR=/app/storage
       - MAX_FILE_SIZE=10485760
-      - EMAIL_ENABLED=false
-      - DEBUG=true
-      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      # FIX: DEBUG must be false in production
+      - DEBUG=false
+      # FIX: CORS restricted to your real frontend origin
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:80}
+      # FIX: Set JWT expiration days (was None — caused TypeError crash)
+      - JWT_EXPIRATION_DAYS=${JWT_EXPIRATION_DAYS:-7}
+      - JWT_ALGORITHM=HS256
     volumes:
-      - ./backend:/app
+      # FIX: Removed ./backend:/app bind mount — in prod, code is baked into image
       - backend-storage:/app/storage
       - backend-uploads:/app/uploads
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # FIX: No --reload in production (already handled in Dockerfile CMD)
     networks:
       - jobportal-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
   frontend:
     build: ./frontend
     container_name: jobportal-frontend
     ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_BASE_URL=http://localhost:8000
-      - VITE_APP_NAME=AI-Powered Job Portal
-      - VITE_MAX_FILE_SIZE=10485760
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0
+      # FIX: nginx serves on port 80 (production standard)
+      - "80:80"
+    # FIX: No VITE_API_BASE_URL needed — nginx proxies /api to backend internally
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - jobportal-network
     restart: unless-stopped
